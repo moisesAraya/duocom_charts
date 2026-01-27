@@ -2,58 +2,24 @@ import React, { useEffect } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import * as ExpoSplashScreen from 'expo-splash-screen';
 
 export default function SplashScreen() {
   useEffect(() => {
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    let isMounted = true;
-
-    const prepare = async () => {
+    // Navegación inmediata simple
+    const timer = setTimeout(() => {
       try {
-        await ExpoSplashScreen.preventAutoHideAsync();
-      } catch (e) {
-        // Ignorar error, continuar
-      }
-
-      try {
-        await ExpoSplashScreen.hideAsync();
-      } catch (e) {
-        // Ignorar error, continuar
-      }
-
-      // Usar timeout más corto y asegurar navegación
-      timeout = setTimeout(() => {
-        if (isMounted) {
-          try {
-            // Modo demo - va directo a resumenes sin login
-            router.replace('/(tabs)/resumenes');
-          } catch (e) {
-            // Si falla, intentar de nuevo
-            setTimeout(() => {
-              try {
-                router.replace('/(tabs)/resumenes');
-              } catch (err) {
-                // Último intento con push
-                router.push('/(tabs)/resumenes');
-              }
-            }, 500);
-          }
-        }
-      }, 2000);
-    };
-
-    prepare().catch(() => {
-      // Si todo falla, navegar de todos modos
-      if (isMounted) {
         router.replace('/(tabs)/resumenes');
+      } catch (e) {
+        // Intentar con push si replace falla
+        try {
+          router.push('/(tabs)/resumenes');
+        } catch (err) {
+          console.log('Navigation failed');
+        }
       }
-    });
+    }, 1500);
 
-    return () => {
-      isMounted = false;
-      if (timeout) clearTimeout(timeout);
-    };
+    return () => clearTimeout(timer);
   }, []);
 
   return (
