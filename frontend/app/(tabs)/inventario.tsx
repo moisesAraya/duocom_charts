@@ -96,37 +96,37 @@ export default function InventarioScreen() {
   }, []);
 
   const inventarioLabels = useMemo(
-    () => inventario.slice(0, 10).map(item => item.producto),
+    () => (inventario || []).slice(0, 10).map(item => item.producto),
     [inventario]
   );
   const inventarioChart = useMemo(
     () => ({
       labels: sparsifyLabels(inventarioLabels.map(label => truncateLabel(label, 10)), 6),
-      datasets: [{ data: inventario.slice(0, 10).map(item => item.total_venta ?? 0) }],
+      datasets: [{ data: (inventario || []).slice(0, 10).map(item => item.total_venta ?? 0) }],
     }),
     [inventario, inventarioLabels]
   );
 
   const rotacionLabels = useMemo(
-    () => rotacion.slice(0, 10).map(item => item.producto),
+    () => (rotacion || []).slice(0, 10).map(item => item.producto),
     [rotacion]
   );
   const rotacionChart = useMemo(
     () => ({
       labels: sparsifyLabels(rotacionLabels.map(label => truncateLabel(label, 10)), 6),
-      datasets: [{ data: rotacion.slice(0, 10).map(item => item.rotacion ?? 0) }],
+      datasets: [{ data: (rotacion || []).slice(0, 10).map(item => item.rotacion ?? 0) }],
     }),
     [rotacion, rotacionLabels]
   );
 
   const rentabilidadLabels = useMemo(
-    () => rentabilidad.slice(0, 10).map(item => item.producto),
+    () => (rentabilidad || []).slice(0, 10).map(item => item.producto),
     [rentabilidad]
   );
   const rentabilidadChart = useMemo(
     () => ({
       labels: sparsifyLabels(rentabilidadLabels.map(label => truncateLabel(label, 10)), 6),
-      datasets: [{ data: rentabilidad.slice(0, 10).map(item => item.rentabilidad ?? 0) }],
+      datasets: [{ data: (rentabilidad || []).slice(0, 10).map(item => item.rentabilidad ?? 0) }],
     }),
     [rentabilidad, rentabilidadLabels]
   );

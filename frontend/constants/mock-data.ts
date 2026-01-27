@@ -100,10 +100,24 @@ export const mockApiResponses: Record<string, any> = {
   },
   '/api/dashboard/inventario-valorizado': {
     success: true,
-    data: {
-      total: 150000000,
-      items: 1250,
-    },
+    data: Array.from({ length: 15 }, (_, i) => ({
+      producto: `Producto ${i + 1}`,
+      total_venta: Math.floor(Math.random() * 5000000) + 1000000,
+    })),
+  },
+  '/api/dashboard/rotacion': {
+    success: true,
+    data: Array.from({ length: 15 }, (_, i) => ({
+      producto: `Producto ${i + 1}`,
+      rotacion: Math.floor(Math.random() * 50) + 5,
+    })),
+  },
+  '/api/dashboard/rentabilidad': {
+    success: true,
+    data: Array.from({ length: 15 }, (_, i) => ({
+      producto: `Producto ${i + 1}`,
+      rentabilidad: Math.floor(Math.random() * 80) + 10,
+    })),
   },
   '/api/sucursales': {
     success: true,
