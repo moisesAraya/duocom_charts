@@ -1,4 +1,4 @@
-import { closePool, query } from '../db/firebird';
+import { disposeClient, query } from '../db/firebird';
 
 const run = async (): Promise<void> => {
   try {
@@ -13,7 +13,7 @@ const run = async (): Promise<void> => {
     console.error('Firebird connection failed', error);
     process.exitCode = 1;
   } finally {
-    closePool();
+    await disposeClient();
   }
 };
 

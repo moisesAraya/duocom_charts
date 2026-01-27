@@ -15,5 +15,5 @@ export const apiKeyMiddleware: RequestHandler = (req, res, next) => {
     return;
   }
 
-  res.status(401).json({ success: false, message: 'Invalid API key' });
+  res.status(401).json({ success: false, error: 'API key invalida' });
 };
