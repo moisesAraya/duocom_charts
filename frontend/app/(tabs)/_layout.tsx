@@ -10,6 +10,7 @@ import { router } from 'expo-router';
 import { clearSession, getClienteConfig } from '@/utils/config';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FiltersProvider } from '@/components/dashboard/filters-context';
+import { API_CONFIG } from '@/constants/api';
 
 const HeaderTitle = () => {
   const [companyName, setCompanyName] = useState('');
@@ -17,6 +18,14 @@ const HeaderTitle = () => {
   useEffect(() => {
     let mounted = true;
     const loadCompanyName = async () => {
+      // En modo demo, mostrar nombre de ejemplo
+      if (API_CONFIG.DEMO_MODE) {
+        if (mounted) {
+          setCompanyName('Empresa Demo');
+        }
+        return;
+      }
+      
       const cliente = await getClienteConfig();
       if (!mounted) return;
       setCompanyName(cliente?.razonSocial || cliente?.nombre || '');
@@ -61,14 +70,16 @@ export default function TabLayout() {
         headerTitleAlign: 'left',
         headerStyle: styles.header,
         headerRight: () => (
-          <Pressable
-            onPress={() => {
-              void clearSession();
-              router.replace('/login');
-            }}
-            style={styles.logoutButton}>
-            <Text style={styles.logoutText}>Salir</Text>
-          </Pressable>
+          API_CONFIG.DEMO_MODE ? null : (
+            <Pressable
+              onPress={() => {
+                void clearSession();
+                router.replace('/login');
+              }}
+              style={styles.logoutButton}>
+              <Text style={styles.logoutText}>Salir</Text>
+            </Pressable>
+          )
         ),
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabLabel,

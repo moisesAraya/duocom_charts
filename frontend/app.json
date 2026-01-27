@@ -49,7 +49,9 @@
       "router": {},
       "eas": {
         "projectId": "8bcad135-4df4-4268-ab5c-78a4d81e4fb2"
-      }
+      },
+      "apiUrl": "http://capdatos.dyndns.org:3000",
+      "apiKey": ""
     }
   }
 }

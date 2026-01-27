@@ -14,7 +14,7 @@ export default function SplashScreen() {
         await ExpoSplashScreen.hideAsync();
 
         timeout = setTimeout(() => {
-          // Login temporalmente desactivado - redirige directo a tabs
+          // Modo demo - va directo a resumenes sin login
           router.replace('/(tabs)/resumenes');
         }, 3000);
       } catch (error) {
