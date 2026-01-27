@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import Constants from 'expo-constants';
 import { DEMO_MODE, getMockResponse } from './mock-data';
 
@@ -29,7 +29,7 @@ export const API_CONFIG = {
   DEMO_MODE,
 };
 
-export const api = axios.create({
+const axiosInstance = axios.create({
   baseURL: baseUrl,
   timeout: 60000,
 });
@@ -39,78 +39,72 @@ let authToken = '';
 export const setAuthToken = (token: string | null) => {
   authToken = token?.trim() ?? '';
   if (authToken) {
-    api.defaults.headers.common.Authorization = `Bearer ${authToken}`;
+    axiosInstance.defaults.headers.common.Authorization = `Bearer ${authToken}`;
   } else {
-    delete api.defaults.headers.common.Authorization;
+    delete axiosInstance.defaults.headers.common.Authorization;
   }
 };
 
 export const getApiKeyHeader = (): Record<string, string> =>
   apiKey ? { 'x-api-key': apiKey } : {};
 
-// Interceptor para modo demo
-api.interceptors.request.use(config => {
-  // Si estamos en modo demo, cancelar la petición y devolver mock
-  if (DEMO_MODE) {
-    const mockData = getMockResponse(config.url || '');
-    if (isDevelopment) {
-      console.info('[api] DEMO MODE - Returning mock data for', config.url);
-    }
-    // Lanzar una respuesta falsa que será capturada
-    return Promise.reject({ 
-      config, 
-      response: { 
-        data: mockData, 
-        status: 200, 
+// Wrapper para api que maneja modo demo
+export const api = {
+  get: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
+    if (DEMO_MODE) {
+      const mockData = getMockResponse(url);
+      return Promise.resolve({
+        data: mockData as T,
+        status: 200,
         statusText: 'OK',
         headers: {},
-        config 
-      },
-      isAxiosError: false,
-      isMockResponse: true,
-    });
-  }
-
-  if (authToken) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${authToken}`;
-  }
-  if (apiKey) {
-    config.headers = config.headers ?? {};
-    config.headers['x-api-key'] = apiKey;
-  }
-  if (isDevelopment) {
-    // eslint-disable-next-line no-console
-    console.info(
-      '[api] Request',
-      config.method?.toUpperCase(),
-      config.url,
-      config.params ?? '',
-      authToken ? 'AUTH=SET' : 'AUTH=EMPTY'
-    );
-  }
-  return config;
-});
-
-api.interceptors.response.use(
-  response => {
-    if (isDevelopment) {
-      // eslint-disable-next-line no-console
-      console.info('[api] Response', response.status, response.config.url);
+        config: config || {} as any,
+      } as AxiosResponse<T>);
     }
-    return response;
+    return axiosInstance.get<T>(url, config);
   },
-  (error: any) => {
-    // Si es una respuesta mock, devolverla como exitosa
-    if (error.isMockResponse) {
-      return Promise.resolve(error.response);
+  
+  post: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
+    if (DEMO_MODE) {
+      const mockData = getMockResponse(url);
+      return Promise.resolve({
+        data: mockData as T,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: config || {} as any,
+      } as AxiosResponse<T>);
     }
-
-    if (isDevelopment) {
-      const status = error.response?.status;
-      // eslint-disable-next-line no-console
-      console.warn('[api] Error', status ?? 'NO_STATUS', error.config?.url);
+    return axiosInstance.post<T>(url, data, config);
+  },
+  
+  put: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
+    if (DEMO_MODE) {
+      const mockData = getMockResponse(url);
+      return Promise.resolve({
+        data: mockData as T,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: config || {} as any,
+      } as AxiosResponse<T>);
     }
-    return Promise.reject(error);
-  }
-);
+    return axiosInstance.put<T>(url, data, config);
+  },
+  
+  delete: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
+    if (DEMO_MODE) {
+      const mockData = getMockResponse(url);
+      return Promise.resolve({
+        data: mockData as T,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: config || {} as any,
+      } as AxiosResponse<T>);
+    }
+    return axiosInstance.delete<T>(url, config);
+  },
+  
+  defaults: axiosInstance.defaults,
+};

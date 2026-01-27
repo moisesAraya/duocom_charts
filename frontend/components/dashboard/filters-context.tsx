@@ -20,22 +20,32 @@ const FiltersContext = createContext<FiltersContextValue | undefined>(undefined)
 export const FiltersProvider = ({ children }: { children: React.ReactNode }) => {
   const [sucursales, setSucursales] = useState<BranchOption[]>([]);
   const [selectedSucursales, setSelectedSucursales] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const fetchSucursales = useCallback(async () => {
     try {
+      setIsLoading(true);
       const response = await api.get('/api/sucursales');
       const data = response.data?.data ?? [];
       setSucursales(data);
       // Seleccionar todas por defecto
       setSelectedSucursales(data.map((s: BranchOption) => s.id));
     } catch (error) {
-      setSucursales([]);
-      setSelectedSucursales([]);
+      // Si falla, usar valores por defecto
+      const defaultBranches: BranchOption[] = [
+        { id: '1', nombre: 'Casa Matriz' }
+      ];
+      setSucursales(defaultBranches);
+      setSelectedSucursales(['1']);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void fetchSucursales();
+    fetchSucursales().catch(() => {
+      // Ignorar errores
+    });
   }, [fetchSucursales]);
 
   const toggleSucursal = useCallback((id: string) => {

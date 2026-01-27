@@ -7,25 +7,51 @@ import * as ExpoSplashScreen from 'expo-splash-screen';
 export default function SplashScreen() {
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout> | null = null;
+    let isMounted = true;
 
     const prepare = async () => {
       try {
         await ExpoSplashScreen.preventAutoHideAsync();
-        await ExpoSplashScreen.hideAsync();
-
-        timeout = setTimeout(() => {
-          // Modo demo - va directo a resumenes sin login
-          router.replace('/(tabs)/resumenes');
-        }, 3000);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Error in splash preparation:', error);
+      } catch (e) {
+        // Ignorar error, continuar
       }
+
+      try {
+        await ExpoSplashScreen.hideAsync();
+      } catch (e) {
+        // Ignorar error, continuar
+      }
+
+      // Usar timeout más corto y asegurar navegación
+      timeout = setTimeout(() => {
+        if (isMounted) {
+          try {
+            // Modo demo - va directo a resumenes sin login
+            router.replace('/(tabs)/resumenes');
+          } catch (e) {
+            // Si falla, intentar de nuevo
+            setTimeout(() => {
+              try {
+                router.replace('/(tabs)/resumenes');
+              } catch (err) {
+                // Último intento con push
+                router.push('/(tabs)/resumenes');
+              }
+            }, 500);
+          }
+        }
+      }, 2000);
     };
 
-    void prepare();
+    prepare().catch(() => {
+      // Si todo falla, navegar de todos modos
+      if (isMounted) {
+        router.replace('/(tabs)/resumenes');
+      }
+    });
 
     return () => {
+      isMounted = false;
       if (timeout) clearTimeout(timeout);
     };
   }, []);
