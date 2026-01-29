@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { router } from 'expo-router';
 
-export default function IndexScreen() {
+export default function Index() {
   useEffect(() => {
     router.replace('/splash');
   }, []);

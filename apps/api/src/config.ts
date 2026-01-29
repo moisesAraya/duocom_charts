@@ -69,3 +69,6 @@ export const config = {
     poolSize: getEnvNumber('FIREBIRD_POOL_SIZE', '5'),
   },
 };
+
+// LOG: Mostrar la configuración firebird cargada al iniciar la app
+console.info('[config] Firebird config loaded:', config.firebird);

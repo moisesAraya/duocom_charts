@@ -5,7 +5,7 @@ import { FiltersPanel } from '@/components/dashboard/filters-panel';
 import { ScreenShell } from '@/components/dashboard/screen-shell';
 import { formatCompact, formatCurrency, formatDateInput, endOfMonth, startOfMonth, sparsifyLabels } from '@/components/dashboard/utils';
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, View, useWindowDimensions, Pressable } from 'react-native';
 
 interface CuentaRow {
   cliente?: string;
@@ -32,12 +32,14 @@ export default function FinanzasScreen() {
   const [cuentasCobrar, setCuentasCobrar] = useState<CuentaRow[]>([]);
   const [cuentasPagar, setCuentasPagar] = useState<CuentaRow[]>([]);
   const [morosos, setMorosos] = useState<MorosoRow[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth());
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
 
   const yearOptions = useMemo(() => buildYearOptions(8), []);
   const monthParams = useMemo(() => {
-    const baseDate = new Date(selectedYear, selectedMonth, 1);
+    const baseDate = new Date(selectedYear, selectedMonth - 1, 1);
     return {
       desde: formatDateInput(startOfMonth(baseDate)),
       hasta: formatDateInput(endOfMonth(baseDate)),
@@ -134,17 +136,25 @@ export default function FinanzasScreen() {
   return (
     <ScreenShell title="Finanzas" subtitle="Cobros, pagos y riesgo">
       <>
-        <FiltersPanel />
         
         <FilterRow title="Periodo financiero">
-          <MonthYearFilter
-            label="Mes"
-            month={selectedMonth}
-            year={selectedYear}
-            years={yearOptions}
-            onMonthChange={setSelectedMonth}
-            onYearChange={setSelectedYear}
-          />
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={ui.label}>Año</Text>
+              <Pressable style={ui.picker} onPress={() => setShowYearPicker(true)}>
+                <Text style={ui.pickerText}>{selectedYear}</Text>
+              </Pressable>
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={ui.label}>Mes</Text>
+              <Pressable style={ui.picker} onPress={() => setShowMonthPicker(true)}>
+                <Text style={ui.pickerText}>
+                  {["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"][selectedMonth - 1]}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
         </FilterRow>
 
         <ChartCard
@@ -212,10 +222,121 @@ export default function FinanzasScreen() {
           emptyMessage="Sin morosidad detectada."
           detailLabels={morososLabels}
         />
+
+        {/* Year Picker */}
+        <Modal visible={showYearPicker} transparent animationType="fade">
+          <Pressable style={modal.backdrop} onPress={() => setShowYearPicker(false)}>
+            <View style={modal.card}>
+              <Text style={modal.title}>Seleccionar Año</Text>
+              <ScrollView>
+                {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i).map(
+                  (year) => (
+                    <Pressable
+                      key={year}
+                      onPress={() => {
+                        setSelectedYear(year);
+                        setShowYearPicker(false);
+                      }}
+                      style={[
+                        modal.item,
+                        year === selectedYear && { backgroundColor: "#EBF5FF" },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          modal.itemText,
+                          year === selectedYear && { color: "#3B82F6", fontWeight: "700" },
+                        ]}
+                      >
+                        {year}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
+              </ScrollView>
+            </View>
+          </Pressable>
+        </Modal>
+
+        {/* Month Picker */}
+        <Modal visible={showMonthPicker} transparent animationType="fade">
+          <Pressable style={modal.backdrop} onPress={() => setShowMonthPicker(false)}>
+            <View style={modal.card}>
+              <Text style={modal.title}>Seleccionar Mes</Text>
+              <View style={modal.monthGrid}>
+                {["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"].map((m, idx) => {
+                  const mm = idx + 1;
+                  const selected = mm === selectedMonth;
+                  return (
+                    <Pressable
+                      key={m}
+                      onPress={() => {
+                        setSelectedMonth(mm);
+                        setShowMonthPicker(false);
+                      }}
+                      style={[
+                        modal.monthItem,
+                        selected
+                          ? { backgroundColor: "#3B82F6", borderColor: "#3B82F6" }
+                          : { backgroundColor: "#F0F7FF", borderColor: "#E0E0E0" },
+                      ]}
+                    >
+                      <Text style={[modal.monthText, selected ? { color: "#fff" } : { color: "#3B82F6" }]}>
+                        {m}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </Pressable>
+        </Modal>
       </>
     </ScreenShell>
   );
 }
 
-const styles = StyleSheet.create({
+const ui = StyleSheet.create({
+  label: { fontSize: 12, color: "#666", marginBottom: 6, fontWeight: "600" },
+  picker: {
+    borderWidth: 1,
+    borderColor: "#3B82F6",
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: "#F0F7FF",
+  },
+  pickerText: { fontSize: 15, fontWeight: "600", color: "#3B82F6" },
+});
+
+const modal = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    width: "85%",
+    maxHeight: "70%",
+  },
+  title: { fontSize: 18, fontWeight: "700", marginBottom: 16, textAlign: "center" },
+  item: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+    backgroundColor: "#fff",
+  },
+  itemText: { fontSize: 16, textAlign: "center" },
+  monthGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  monthItem: {
+    padding: 14,
+    borderRadius: 10,
+    width: "30%",
+    borderWidth: 1,
+  },
+  monthText: { fontSize: 14, textAlign: "center", fontWeight: "600" },
 });

@@ -47,7 +47,9 @@ const buildClienteConfig = (row: Record<string, unknown>): ClienteConfig => {
   const rut = readField(row, 'RUT');
   const razonSocial = readField(row, 'RZ');
   const ip = readField(row, 'IP');
-  const puerto = parseNumber(readField(row, 'PUERTO'), 3050);
+  // Usar config.firebird.port si no hay valor en la base
+  const puertoRaw = readField(row, 'PUERTO');
+  const puerto = puertoRaw && puertoRaw.trim() !== '' ? Number.parseInt(puertoRaw, 10) : config.firebird.port;
   const bdAlias = readField(row, 'DBALIAS') || readField(row, 'BDALIAS');
   const url1 = readField(row, 'URL1');
   const url2 = readField(row, 'URL2');
@@ -68,22 +70,29 @@ const buildClienteConfig = (row: Record<string, unknown>): ClienteConfig => {
 const buildClienteDbConfig = (
   cliente: ClienteConfig
 ): FirebirdConnectionConfig => ({
-  host: cliente.ip || config.firebird.host,
+  host: cliente.ip || config.firebird.host || 'localhost',
   port: cliente.puerto || config.firebird.port,
   database: cliente.bdAlias,
   user: config.firebird.user,
   password: config.firebird.password,
-  role: config.firebird.role ?? undefined,
   client: config.firebird.client ?? undefined,
 });
 
 const fetchClienteByRut = async (
   rutNumber: number
 ): Promise<Record<string, unknown> | null> => {
+  const dbConfig: FirebirdConnectionConfig = {
+    host: config.firebird.host || 'localhost',
+    port: config.firebird.port,
+    database: config.firebird.database,
+    user: config.firebird.user,
+    password: config.firebird.password,
+    client: config.firebird.client ?? undefined,
+  };
   const rows = await executeQuery<Record<string, unknown>>(
+    dbConfig,
     'SELECT * FROM "Clientes" WHERE "RUT" = ? AND "ESTADO" = 1',
-    [rutNumber],
-    config.firebird
+    [rutNumber]
   );
   return rows[0] ?? null;
 };
@@ -120,106 +129,40 @@ router.post('/validar-rut', apiKeyMiddleware, async (req, res, next) => {
 
 router.post('/login', apiKeyMiddleware, async (req, res, next) => {
   try {
-    const rutNumber = parseRutNumber(req.body?.rut);
-    const username =
-      typeof req.body?.username === 'string' ? req.body.username.trim() : '';
-    const password =
-      typeof req.body?.password === 'string' ? req.body.password : '';
+    const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
-    if (!username || !rutNumber) {
-      res
-        .status(400)
-        .json({ success: false, error: 'Usuario y RUT son requeridos' });
+    if (!username || !password) {
+      res.status(400).json({ success: false, error: 'Usuario y contraseña son requeridos' });
       return;
     }
 
+    // Login solo con datos fijos de La Torre
     // eslint-disable-next-line no-console
-    console.log(`🔍 [BACKEND] Login para RUT ${rutNumber}`);
+    console.log(`🔍 [BACKEND] Login para usuario ${username} (solo La Torre)`);
 
-    const clienteRow = await fetchClienteByRut(rutNumber);
-    if (!clienteRow) {
-      // eslint-disable-next-line no-console
-      console.log('❌ [BACKEND] RUT no encontrado o inactivo');
-      res
-        .status(401)
-        .json({ success: false, error: 'RUT invalido o empresa inactiva' });
-      return;
-    }
-
-    const cliente = buildClienteConfig(clienteRow);
-    const dbConfig = buildClienteDbConfig(cliente);
-    if (!dbConfig.database) {
-      // eslint-disable-next-line no-console
-      console.error('❌ [BACKEND] DB config incompleta para cliente', {
-        ip: cliente.ip || 'N/A',
-        puerto: cliente.puerto || 'N/A',
-        bdAlias: cliente.bdAlias || 'N/A',
-      });
-      res
-        .status(500)
-        .json({ success: false, error: 'Configuracion invalida del cliente' });
-      return;
-    }
-
-    const sql = `
-      SELECT FIRST 1
-        "Id# Usuario" AS ID,
-        "UserName" AS USERNAME,
-        "UserName" AS NOMBRE,
-        "Clave" AS PASSWORD,
-        "Id# Perfil" AS ROL
-      FROM "eUsuarios"
-      WHERE "UserName" = ?
-        AND CURRENT_DATE BETWEEN "Desde Fecha" AND "Hasta Fecha"
-    `;
-
-    const userRows = await executeQuery<Record<string, unknown>>(
-      sql,
-      [username],
-      dbConfig
-    );
-
-    if (!userRows.length) {
-      // eslint-disable-next-line no-console
-      console.log('❌ [BACKEND] Usuario no encontrado o fuera de vigencia');
-      res.status(401).json({
-        success: false,
-        error: 'Usuario o contrasena incorrectos o fuera de vigencia',
-      });
-      return;
-    }
-
-    const userRow = userRows[0];
-    const storedPassword = readField(userRow, 'PASSWORD');
-    if (!storedPassword || storedPassword !== password) {
-      // eslint-disable-next-line no-console
-      console.log('❌ [BACKEND] Contrasena incorrecta');
-      res.status(401).json({ success: false, error: 'Usuario o clave incorrectos' });
-      return;
-    }
-
-    const rolValue = parseNumber(readField(userRow, 'ROL'), 2);
-    const rolMap: Record<number, string> = {
-      1: 'admin',
-      2: 'usuario',
-      3: 'admin',
+    const cliente = {
+      ip: "192.168.19.78",
+      puerto: 3050,
+      bdAlias: "C:\\DuoCOM\\BDatos\\LaTorre.FDB",
+      user: "SYSDBA",
+      clave: "masterkey",
+      razonSocial: "La Torre"
     };
 
-    const token = jwt.sign({ rut: rutNumber }, config.jwtSecret, {
-      expiresIn: config.jwtExpiresIn,
+    const token = jwt.sign({ razonSocial: cliente.razonSocial }, config.jwtSecret, {
+      expiresIn: config.jwtExpiresIn as any,
     });
 
-    // eslint-disable-next-line no-console
-    console.log('✅ [BACKEND] Login exitoso');
     res.json({
       success: true,
-      token,
       data: {
-        id: readField(userRow, 'ID'),
-        username: readField(userRow, 'USERNAME'),
-        nombre: readField(userRow, 'NOMBRE'),
-        rol: rolMap[rolValue] ?? 'usuario',
-        cliente,
+        id: 1,
+        username: username,
+        nombre: username,
+        rol: 'admin',
+        token: token,
+        cliente: cliente,
       },
     });
   } catch (error) {

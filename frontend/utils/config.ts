@@ -1,12 +1,71 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG, api, getApiKeyHeader, setAuthToken } from '@/constants/api';
 
+/**
+ * Returns the current authentication headers for API requests.
+ * You may want to adjust this implementation to match your authentication logic.
+ */
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await AsyncStorage.getItem(STORAGE_KEYS.token);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+const STORAGE_KEYS = {
+  USUARIO_ACTUAL: '@usuario_actual',
+  CLIENTE_CONFIG: '@cliente_config',
+  BACKEND_URL: '@backend_url',
+  token: '@token',
+  cliente: '@cliente',
+  user: '@user',
+} as const;
+
+export interface Usuario {
+  id: number;
+  username: string;
+  nombre: string;
+  rol: string;
+  token?: string;
+  cliente?: ClienteConfig;
+}
+
+
+
+export async function getUsuarioActual(): Promise<Usuario | null> {
+  const data = await AsyncStorage.getItem(STORAGE_KEYS.USUARIO_ACTUAL);
+  if (data) {
+    const usuario = JSON.parse(data) as Usuario;
+    if (usuario.token) {
+      setAuthToken(usuario.token);
+    }
+    return usuario;
+  }
+  return null;
+}
+
+
+
+
+
+
+
+
+export async function logout(): Promise<void> {
+  await AsyncStorage.multiRemove([
+    STORAGE_KEYS.USUARIO_ACTUAL,
+    STORAGE_KEYS.CLIENTE_CONFIG,
+  ]);
+  setAuthToken(null);
+}
+
 export type ClienteConfig = {
   idCliente?: number | string;
   rut: string;
   nombre: string;
   razonSocial?: string;
   configuracion: Record<string, unknown>;
+  nombreFantasia?: string;
+  id?: number;
+  [key: string]: any;
 };
 
 type ClienteConfigResponse = {
@@ -24,41 +83,23 @@ type UsuarioActual = {
   [key: string]: unknown;
 };
 
-const STORAGE_KEYS = {
-  backendUrl: '@backendUrl',
-  user: '@userData',
-  token: '@authToken',
-  cliente: '@clienteConfig',
-};
-
 export const setBackendUrl = async (url: string): Promise<void> => {
   const trimmed = url.trim();
   if (!trimmed) return;
-  await AsyncStorage.setItem(STORAGE_KEYS.backendUrl, trimmed);
+  await AsyncStorage.setItem(STORAGE_KEYS.BACKEND_URL, trimmed);
   api.defaults.baseURL = trimmed;
 };
 
 export const getBackendUrl = async (): Promise<string> => {
-  const stored = await AsyncStorage.getItem(STORAGE_KEYS.backendUrl);
+  const stored = await AsyncStorage.getItem(STORAGE_KEYS.BACKEND_URL);
   const resolved = stored?.trim() || API_CONFIG.BASE_URL;
   api.defaults.baseURL = resolved;
   return resolved;
 };
 
-export const getAuthHeaders = async (): Promise<Record<string, string>> => {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...getApiKeyHeader(),
-  };
-  const token = await AsyncStorage.getItem(STORAGE_KEYS.token);
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-};
 
 export const setUsuarioActual = async (user: UsuarioActual): Promise<void> => {
-  await AsyncStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
+  await AsyncStorage.setItem(STORAGE_KEYS.USUARIO_ACTUAL, JSON.stringify(user));
   if (user.token) {
     await AsyncStorage.setItem(STORAGE_KEYS.token, user.token);
     setAuthToken(user.token);

@@ -1,25 +1,19 @@
-import React, { useEffect } from 'react';
+
+import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { getUsuarioActual, getClienteConfig, logout } from '@/utils/config';
 
 export default function SplashScreen() {
   useEffect(() => {
-    // Navegación inmediata simple
-    const timer = setTimeout(() => {
-      try {
-        router.replace('/(tabs)/resumenes');
-      } catch (e) {
-        // Intentar con push si replace falla
-        try {
-          router.push('/(tabs)/resumenes');
-        } catch (err) {
-          console.log('Navigation failed');
-        }
-      }
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    const checkTokenAndRedirect = async () => {
+      // Agregar un pequeño retraso para asegurar que el Root Layout esté montado
+      setTimeout(() => {
+        router.replace('/login');
+      }, 100);
+    };
+    checkTokenAndRedirect();
   }, []);
 
   return (
@@ -30,18 +24,29 @@ export default function SplashScreen() {
       end={{ x: 1, y: 1 }}>
       <View style={styles.splashContent}>
         <Image
-          source={require('../assets/images/icon.png')}
+          source={require('../assets/img.png')}
           style={styles.logo}
           resizeMode="contain"
         />
-
         <Text style={styles.splashTitulo}>DuoCom Charts</Text>
         <Text style={styles.splashSubtitulo}>Sistema de visualización de estadísticas</Text>
         <View style={styles.splashDivider} />
-        <Text style={styles.splashEmpresa}>DuoCom SpA.</Text>
+        <EmpresaNombreDinamico />
         <Text style={styles.splashSlogan}>Servicios integrales en Informática</Text>
       </View>
     </LinearGradient>
+  );
+}
+
+function EmpresaNombreDinamico() {
+  const [nombre, setNombre] = useState('');
+  useEffect(() => {
+    getClienteConfig().then(cfg => {
+      setNombre(cfg?.razonSocial || cfg?.nombreFantasia || '');
+    });
+  }, []);
+  return (
+    <Text style={styles.splashEmpresa}>{nombre || ' '}</Text>
   );
 }
 

@@ -57,7 +57,7 @@ export default function TabLayout() {
         tabBarInactiveTintColor: '#94A3B8',
         headerShown: true,
         tabBarButton: HapticTab,
-        headerTitle: () => <HeaderTitle />,
+        headerTitle: '',
         headerTransparent: true,
         headerBackground: () => (
           <LinearGradient
@@ -67,7 +67,6 @@ export default function TabLayout() {
             style={styles.headerBackground}
           />
         ),
-        headerTitleAlign: 'left',
         headerStyle: styles.header,
         headerRight: () => (
           API_CONFIG.DEMO_MODE ? null : (
@@ -91,15 +90,6 @@ export default function TabLayout() {
           title: 'Ventas',
           tabBarIcon: ({ color }) => (
             <MaterialCommunityIcons name="chart-bar" size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="resumenes"
-        options={{
-          title: 'Resumenes',
-          tabBarIcon: ({ color }) => (
-            <MaterialCommunityIcons name="file-document-outline" size={24} color={color} />
           ),
         }}
       />

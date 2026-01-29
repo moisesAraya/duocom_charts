@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,10 +18,7 @@ import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  esUsuarioAdmin,
-  getAuthHeaders,
   getBackendUrl,
-  hayUsuarioLogueado,
   setClienteConfig,
   setUsuarioActual,
 } from '@/utils/config';
@@ -29,129 +26,40 @@ import {
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [rut, setRut] = useState('');
-  const [rutValidado, setRutValidado] = useState(false);
-  const [razonSocial, setRazonSocial] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const passwordInputRef = useRef<TextInput>(null);
 
-  useEffect(() => {
-  }, []);
-
-  useEffect(() => {
-    if (rut.length >= 8) {
-      void validarRutAutomatico();
-    } else {
-      setRutValidado(false);
-      setRazonSocial('');
-    }
-  }, [rut]);
-
-  const validarRutAutomatico = async () => {
-    try {
-      const API_URL = await getBackendUrl();
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${API_URL}/api/validar-rut`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ rut }),
-      });
-      const json = await response.json();
-      if (json.success) {
-        setRutValidado(true);
-      } else {
-        setRutValidado(false);
-      }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error validando RUT:', error);
-      setRutValidado(false);
-    }
-  };
-
-  const validarRutManual = async () => {
-    if (!rut.trim()) {
-      Alert.alert('Error', 'Por favor ingrese un RUT');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const API_URL = await getBackendUrl();
-      const headers = await getAuthHeaders();
-      const response = await fetch(`${API_URL}/api/validar-rut`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ rut }),
-      });
-      const json = await response.json();
-      if (json.success) {
-        setRutValidado(true);
-        await setClienteConfig(json.data);
-        setRazonSocial(json.data?.razonSocial ?? '');
-      } else {
-        setRutValidado(false);
-        Alert.alert('RUT invalido', json.error || 'RUT no encontrado');
-      }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error validando RUT:', error);
-      setRutValidado(false);
-      Alert.alert(
-        'Error de conexion',
-        'No se pudo conectar con el servidor.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleLogin = async () => {
-    if (!rutValidado) {
-      Alert.alert('Error', 'Por favor ingrese un RUT valido');
-      return;
-    }
     if (!username.trim()) {
       Alert.alert('Error', 'Por favor ingrese un nombre de usuario');
       return;
     }
     if (!password) {
-      Alert.alert('Error', 'Por favor ingrese la contrasena');
+      Alert.alert('Error', 'Por favor ingrese la contraseña');
       return;
     }
-
     try {
       setLoading(true);
       const API_URL = await getBackendUrl();
-      const headers = await getAuthHeaders();
       const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
-        headers,
-        body: JSON.stringify({
-          username: username.trim(),
-          password,
-          rut,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'Duocom2025SecretKey!@#',
+        },
+        body: JSON.stringify({ username: username.trim(), password }),
       });
       const json = await response.json();
       if (json.success && json.data) {
-        const token = typeof json.token === 'string' ? json.token : '';
-        await setUsuarioActual({ ...json.data, token });
-        if (json.data.cliente) {
-          await setClienteConfig(json.data.cliente);
-        }
-        router.replace(esUsuarioAdmin(json.data) ? '/ventas' : '/ventas');
+        await setUsuarioActual(json.data);
+        await setClienteConfig(json.data.cliente);
+        router.replace('/(tabs)/ventas');
       } else {
         Alert.alert('Error', json.error || 'Usuario incorrecto');
       }
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Error en login:', error);
-      Alert.alert(
-        'Error de conexion',
-        'No se pudo conectar con el servidor.'
-      );
+      Alert.alert('Error de Conexión', 'No se pudo conectar con el servidor. Verifique su conexión.');
     } finally {
       setLoading(false);
     }
@@ -159,24 +67,27 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient
-      colors={['#0B1F3A', '#F97316']}
-      style={styles.container}
+      colors={["#0B1F3A", "#F97316"]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}>
+      end={{ x: 1, y: 1 }}
+      style={styles.container}
+    >
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="light" />
         <KeyboardAvoidingView
-          behavior="padding"
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 20}
-          style={styles.keyboardView}>
+          style={styles.keyboardView}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        >
           <View style={styles.content}>
             <ScrollView
               contentContainerStyle={styles.scrollContent}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}>
+              showsVerticalScrollIndicator={false}
+            >
               <View style={styles.logoContainer}>
                 <Image
-                  source={require('../assets/images/icon.png')}
+                  source={require("../assets/img.png")}
                   style={styles.logo}
                   resizeMode="contain"
                 />
@@ -184,61 +95,19 @@ export default function LoginScreen() {
               </View>
 
               <View style={styles.form}>
-                <View style={styles.inputGroup}>
-                  <View style={styles.inputIconContainer}>
-                    <Ionicons name="card" size={20} color="#999" />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="RUT Empresa"
-                      placeholderTextColor="#666"
-                      value={rut}
-                      onChangeText={text => setRut(text.replace(/\D/g, ''))}
-                      keyboardType="numeric"
-                      maxLength={9}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!loading}
-                      returnKeyType="next"
-                    />
-                    <TouchableOpacity
-                      style={[
-                        styles.validateButtonSmall,
-                        rutValidado && styles.validateButtonSmallSuccess,
-                      ]}
-                      onPress={validarRutManual}
-                      disabled={loading || rut.length < 8}>
-                      <Ionicons
-                        name={rutValidado ? 'checkmark-circle' : 'search'}
-                        size={16}
-                        color="white"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {razonSocial ? (
-                  <View style={styles.companyInfo}>
-                    <Text style={styles.companyText}>
-                      Bienvenido {razonSocial}
-                    </Text>
-                  </View>
-                ) : null}
-
+                {/* Usuario */}
                 <View style={styles.inputGroup}>
                   <View style={styles.inputIconContainer}>
                     <Ionicons name="person" size={20} color="#999" />
                     <TextInput
-                      style={[
-                        styles.input,
-                        !rutValidado && styles.inputDisabled,
-                      ]}
+                      style={styles.input}
                       placeholder="Usuario"
                       placeholderTextColor="#666"
                       value={username}
                       onChangeText={setUsername}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      editable={!loading && rutValidado}
+                      editable={!loading}
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         passwordInputRef?.current?.focus();
@@ -247,34 +116,26 @@ export default function LoginScreen() {
                   </View>
                 </View>
 
+                {/* Contraseña */}
                 <View style={styles.inputGroup}>
                   <View style={styles.inputIconContainer}>
                     <Ionicons name="lock-closed" size={20} color="#999" />
                     <TextInput
                       ref={passwordInputRef}
-                      style={[
-                        styles.input,
-                        !rutValidado && styles.inputDisabled,
-                      ]}
-                      placeholder="Contrasena"
+                      style={styles.input}
+                      placeholder="Contraseña"
                       placeholderTextColor="#666"
                       value={password}
                       onChangeText={setPassword}
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      editable={!loading && rutValidado}
+                      editable={!loading}
                       returnKeyType="done"
                       onSubmitEditing={handleLogin}
                     />
-                    <TouchableOpacity
-                      onPress={() => setShowPassword(value => !value)}
-                      style={styles.eyeIcon}>
-                      <Ionicons
-                        name={showPassword ? 'eye' : 'eye-off'}
-                        size={20}
-                        color="#999"
-                      />
+                    <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeIcon}>
+                      <Ionicons name={showPassword ? "eye" : "eye-off"} size={20} color="#999" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -282,16 +143,17 @@ export default function LoginScreen() {
                 <TouchableOpacity
                   style={[
                     styles.loginButton,
-                    (loading || !rutValidado) && styles.loginButtonDisabled,
+                    loading && styles.loginButtonDisabled,
                   ]}
                   onPress={handleLogin}
-                  disabled={loading || !rutValidado}>
+                  disabled={loading}
+                >
                   {loading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
                     <>
                       <Ionicons name="log-in" size={20} color="#fff" />
-                      <Text style={styles.loginButtonText}>Iniciar Sesion</Text>
+                      <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -326,87 +188,69 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 32,
   },
   logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 1,
+    width: 250,
+    height: 250,
+    marginBottom: 12,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FDBA74',
-    marginTop: 16,
+    color: 'white',
     letterSpacing: 1,
   },
   form: {
-    width: '100%',
+    gap: 16,
   },
   inputGroup: {
-    marginBottom: 16,
+    gap: 4,
   },
   inputIconContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'white',
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(249, 115, 22, 0.45)',
     paddingHorizontal: 16,
-    height: 56,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   input: {
     flex: 1,
-    color: '#fff',
+    height: 50,
     fontSize: 16,
+    color: '#333',
     marginLeft: 12,
-    marginRight: 8,
-  },
-  inputDisabled: {
-    opacity: 0.5,
-  },
-  validateButtonSmall: {
-    backgroundColor: '#F97316',
-    borderRadius: 8,
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  validateButtonSmallSuccess: {
-    backgroundColor: '#F97316',
   },
   eyeIcon: {
-    padding: 4,
+    padding: 8,
   },
   loginButton: {
     backgroundColor: '#F97316',
+    height: 54,
     borderRadius: 12,
-    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
     gap: 8,
+    marginTop: 8,
+    shadowColor: '#F97316',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   loginButtonDisabled: {
-    opacity: 0.6,
+    backgroundColor: '#999',
+    shadowOpacity: 0.1,
   },
   loginButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  companyInfo: {
-    marginTop: 8,
-    marginBottom: 8,
-    alignItems: 'center',
-  },
-  companyText: {
-    color: '#FDBA74',
+    color: 'white',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
 });

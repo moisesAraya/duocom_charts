@@ -1,7 +1,7 @@
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
 import React, { useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { formatDateDisplay } from './utils';
 
 type RangeOption<T extends string> = { label: string; value: T };
@@ -153,18 +153,48 @@ export const SelectFilter = <T extends string | number>({
   value,
   options,
   onChange,
-}: SelectFilterProps<T>) => (
-  <View style={styles.field}>
-    <Text style={styles.label}>{label}</Text>
-    <View style={styles.pickerWrap}>
-      <Picker selectedValue={value} onValueChange={onChange} style={styles.picker}>
-        {options.map(option => (
-          <Picker.Item key={`${option.value}`} label={option.label} value={option.value} />
-        ))}
-      </Picker>
+}: SelectFilterProps<T>) => {
+  const [showOptions, setShowOptions] = useState(false);
+  const selectedLabel = options.find(opt => opt.value === value)?.label || String(value);
+
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View>
+        <Pressable 
+          onPress={() => setShowOptions(!showOptions)} 
+          style={styles.pickerWrap}
+        >
+          <Text style={styles.pickerText}>{selectedLabel}</Text>
+        </Pressable>
+        {showOptions && (
+          <View style={styles.optionsDropdown}>
+            {options.map(option => (
+              <Pressable
+                key={`${option.value}`}
+                onPress={() => {
+                  onChange(option.value);
+                  setShowOptions(false);
+                }}
+                style={[
+                  styles.optionItem,
+                  option.value === value && styles.optionItemActive
+                ]}
+              >
+                <Text style={[
+                  styles.optionText,
+                  option.value === value && styles.optionTextActive
+                ]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 export const buildYearOptions = (span = 6): number[] => {
   const current = new Date().getFullYear();
@@ -240,8 +270,43 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 12,
-    overflow: 'hidden',
     backgroundColor: '#F9FAFB',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  pickerText: {
+    fontSize: 13,
+    color: '#111827',
+  },
+  optionsDropdown: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    maxHeight: 200,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  optionItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  optionItemActive: {
+    backgroundColor: '#EEF2FF',
+  },
+  optionText: {
+    fontSize: 13,
+    color: '#111827',
+  },
+  optionTextActive: {
+    fontWeight: '600',
+    color: '#2563EB',
   },
   picker: {
     height: 50,

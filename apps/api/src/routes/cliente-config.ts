@@ -82,9 +82,9 @@ router.get('/cliente-config', async (req, res) => {
       : 'SELECT "ID# CLIENTE", "RUT", "NOMBRE", "CONFIGURACION_JSON" FROM "Clientes" WHERE "RUT" = ? AND "ESTADO" = 1';
 
     const rows = await executeQuery<Record<string, unknown>>(
+      dbConfig,
       sql,
-      [idCliente ?? rut],
-      dbConfig
+      [idCliente ?? rut]
     );
 
     if (!rows.length) {

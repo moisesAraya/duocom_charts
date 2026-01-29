@@ -6,12 +6,13 @@ export const makeChartConfig = (
   backgroundColor: '#ffffff',
   backgroundGradientFrom: '#ffffff',
   backgroundGradientTo: '#ffffff',
-  fillShadowGradientFrom: `rgba(${rgb}, 0.35)`,
-  fillShadowGradientTo: `rgba(${rgb}, 0.02)`,
+  // Stronger fill for area under line
+  fillShadowGradientFrom: `rgba(${rgb}, 0.65)`,
+  fillShadowGradientTo: `rgba(${rgb}, 0.18)`,
   fillShadowGradientOpacity: 1,
   decimalPlaces: 0,
   formatYLabel,
-  color: (opacity = 1) => `rgba(${rgb}, ${opacity})`,
+  color: (opacity = 1) => `rgba(${rgb}, ${Math.max(opacity, 0.85)})`,
   labelColor: (opacity = 1) => `rgba(17, 24, 39, ${opacity})`,
   strokeWidth: 3,
   propsForDots: {

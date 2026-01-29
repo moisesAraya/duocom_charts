@@ -1,6 +1,6 @@
 // Datos de demostración para modo sin backend
 
-export const DEMO_MODE = true; // Cambiar a false para conectar al backend real
+export const DEMO_MODE = false; // Cambiar a true para usar datos de demostración
 
 interface MockDataRow {
   fecha: string;

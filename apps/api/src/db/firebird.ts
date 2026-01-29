@@ -44,11 +44,9 @@ const createClientWithFallback = (customLibraryPath?: string | null): Client => 
   for (const library of libraries) {
     try {
       const client = createNativeClient(library);
-      // eslint-disable-next-line no-console
       console.info(`[firebird] Using client library: ${library}`);
       return client;
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.warn(`[firebird] Failed to load client library: ${library}`);
       lastError = error;
     }
@@ -72,15 +70,12 @@ const openAttachment = async (
 ): Promise<{ client: Client; attachment: Attachment }> => {
   const client = createClient(options);
   const uri = buildDatabaseUri(options);
-  // eslint-disable-next-line no-console
   console.info(`[firebird] Connecting to ${uri} as ${options.user}`);
   try {
     const attachment = await client.connect(uri);
-    // eslint-disable-next-line no-console
     console.info('[firebird] Connection established');
     return { client, attachment };
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.error('[firebird] Connection failed', error);
     await client.dispose();
     throw error;
@@ -91,15 +86,24 @@ const startReadOnlyTransaction = async (
   attachment: Attachment
 ): Promise<Transaction> =>
   attachment.startTransaction({
-    isolation: 'READ_COMMITTED',
+    isolation: 'READ_COMMITTED' as any,
     readCommittedMode: 'RECORD_VERSION',
     accessMode: 'READ_ONLY',
   });
 
+/**
+ * Ejecuta una consulta SQL de solo lectura en la base de datos Firebird.
+ * Crea una nueva conexión para cada consulta y la cierra al finalizar.
+ * 
+ * @param sql - Consulta SQL a ejecutar
+ * @param params - Parámetros de la consulta
+ * @param options - Configuración de conexión (usa config.db por defecto)
+ * @returns Array de objetos con los resultados
+ */
 export const query = async <T extends object = Record<string, unknown>>(
   sql: string,
   params: unknown[] = [],
-  options: FirebirdConnectionConfig = config.firebird
+  options: FirebirdConnectionConfig = config.firebird as any
 ): Promise<T[]> => {
   const { client, attachment } = await openAttachment(options);
   const transaction = await startReadOnlyTransaction(attachment);
@@ -114,23 +118,27 @@ export const query = async <T extends object = Record<string, unknown>>(
     try {
       await transaction.rollback();
     } catch (rollbackError) {
-      // Ignore rollback errors so we surface the original exception.
+      // Ignorar errores de rollback para mostrar el error original
     }
     throw error;
   } finally {
     try {
       await attachment.disconnect();
     } catch (disconnectError) {
-      // Ignore disconnect errors to avoid masking the real failure.
+      // Ignorar errores de desconexión
     }
     try {
       await client.dispose();
     } catch (disposeError) {
-      // Ignore dispose errors to avoid masking the real failure.
+      // Ignorar errores de dispose
     }
   }
 };
 
+/**
+ * No-op: los clientes se crean por consulta y se desechan inmediatamente.
+ * Esta función existe por compatibilidad.
+ */
 export const disposeClient = async (): Promise<void> => {
-  // No-op: clients are created per query and disposed immediately.
+  // No hace nada, los clientes se desechan automáticamente
 };

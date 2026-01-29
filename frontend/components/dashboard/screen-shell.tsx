@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { getClienteConfig } from '@/utils/config';
+import { getClienteConfig, refreshClienteConfig } from '@/utils/config';
 
 export const ScreenShell = ({
   title,
@@ -20,9 +20,13 @@ export const ScreenShell = ({
   useEffect(() => {
     let mounted = true;
     const loadCompanyName = async () => {
-      const cliente = await getClienteConfig();
+      let cliente = await getClienteConfig();
+      if (!cliente) {
+        // Si no hay config en storage, refresca desde backend
+        cliente = await refreshClienteConfig();
+      }
       if (!mounted) return;
-      setCompanyName(cliente?.razonSocial || cliente?.nombre || '');
+      setCompanyName(cliente?.razonSocial || cliente?.nombre || cliente?.nombreFantasia || '');
     };
     void loadCompanyName();
     return () => {
@@ -87,6 +91,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
+    paddingTop: 108, // 88 (header height) + 20 (padding)
     paddingBottom: 120,
   },
   header: {

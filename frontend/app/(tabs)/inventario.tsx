@@ -134,7 +134,6 @@ export default function InventarioScreen() {
   return (
     <ScreenShell title="Inventario y productos" subtitle="Rotacion y margen por articulo">
       <>
-        <FiltersPanel />
         
         {errors.length ? (
           <View style={styles.errorBox}>
