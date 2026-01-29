@@ -55,10 +55,11 @@
       "typedRoutes": true,
       "reactCompiler": false
     },
+    "owner": "moisesarayaa",
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "8bcad135-4df4-4268-ab5c-78a4d81e4fb2"
+        "projectId": "f5a69da6-4550-4977-a2d6-310614b4abc1"
       },
       "apiUrl": "http://192.168.191.108:3000",
       "apiKey": ""

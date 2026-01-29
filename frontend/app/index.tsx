@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 
 export default function Index() {
   useEffect(() => {
-    router.replace('/splash');
+    router.replace('/login');
   }, []);
 
   return null;
