@@ -3,7 +3,9 @@ import { router } from 'expo-router';
 
 export default function Index() {
   useEffect(() => {
-    router.replace('/login');
+    setTimeout(() => {
+      router.replace('/login');
+    }, 100);
   }, []);
 
   return null;

@@ -1,27 +1,51 @@
-
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { useRootNavigationState, useRouter } from 'expo-router';
 import { getUsuarioActual, getClienteConfig, logout } from '@/utils/config';
 
 export default function SplashScreen() {
+  const router = useRouter();
+  const rootNavState = useRootNavigationState();
+
   useEffect(() => {
+    // Espera a que el root layout/navigator esté montado
+    if (!rootNavState?.key) return;
+
     const checkTokenAndRedirect = async () => {
-      // Agregar un retraso mayor y usar push en lugar de replace para evitar conflictos
-      setTimeout(() => {
-        router.push('/login');
-      }, 1000);
+      try {
+        // Si aquí de verdad quieres validar token/config, hazlo acá.
+        // Ejemplo típico: usuario logeado => / (tabs), sino => /login
+
+        const usuario = await getUsuarioActual();
+
+        // (Opcional) Si tu config puede fallar, lo envuelves con try/catch
+        // const cfg = await getClienteConfig();
+
+        if (usuario) {
+          router.replace('/(tabs)'); // ajusta a tu ruta real
+        } else {
+          router.replace('/login');
+        }
+      } catch (e) {
+        // ante error, manda a login (o haz logout si aplica)
+        try {
+          await logout?.();
+        } catch {}
+        router.replace('/login');
+      }
     };
+
     checkTokenAndRedirect();
-  }, []);
+  }, [rootNavState?.key, router]);
 
   return (
     <LinearGradient
       colors={['#0B1F3A', '#F97316']}
       style={styles.splashContainer}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}>
+      end={{ x: 1, y: 1 }}
+    >
       <View style={styles.splashContent}>
         <Image
           source={require('../assets/img.png')}
@@ -40,14 +64,25 @@ export default function SplashScreen() {
 
 function EmpresaNombreDinamico() {
   const [nombre, setNombre] = useState('');
+
   useEffect(() => {
-    getClienteConfig().then(cfg => {
-      setNombre(cfg?.razonSocial || cfg?.nombreFantasia || '');
-    });
+    let alive = true;
+    getClienteConfig()
+      .then(cfg => {
+        if (!alive) return;
+        setNombre(cfg?.razonSocial || cfg?.nombreFantasia || '');
+      })
+      .catch(() => {
+        if (!alive) return;
+        setNombre('');
+      });
+
+    return () => {
+      alive = false;
+    };
   }, []);
-  return (
-    <Text style={styles.splashEmpresa}>{nombre || ' '}</Text>
-  );
+
+  return <Text style={styles.splashEmpresa}>{nombre || ' '}</Text>;
 }
 
 const styles = StyleSheet.create({
