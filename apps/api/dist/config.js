@@ -49,7 +49,7 @@ exports.config = {
     jwtExpiresIn: getEnv('JWT_EXPIRES_IN', '12h'),
     databaseUrl: getEnv('DATABASE_URL', ''),
     firebird: {
-        host: getEnvAny(['FIREBIRD_HOST', 'FB_HOST'], '192.168.18.79'),
+        host: getEnvAny(['FIREBIRD_HOST', 'FB_HOST'], '192.168.191.108'),
         port: getEnvNumberAny(['FIREBIRD_PORT', 'FB_PORT'], '350'),
         database: getEnvAny(['FIREBIRD_DATABASE', 'FB_DATABASE']),
         user: getEnvAny(['FIREBIRD_USER', 'FB_USER']),
