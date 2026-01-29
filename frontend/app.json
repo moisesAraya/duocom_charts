@@ -11,6 +11,10 @@
       "supportsTablet": true
     },
     "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/img_.png"
+      },
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -56,7 +60,7 @@
       "eas": {
         "projectId": "8bcad135-4df4-4268-ab5c-78a4d81e4fb2"
       },
-      "apiUrl": "http://192.168.18.79:3000",
+      "apiUrl": "http://192.168.191.108:3000",
       "apiKey": ""
     }
   }

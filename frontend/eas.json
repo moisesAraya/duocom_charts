@@ -8,19 +8,19 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://192.168.18.79:3000"
+        "EXPO_PUBLIC_API_URL": "http://192.168.191.108:3000"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://capdatos.dyndns.org:3000"
+        "EXPO_PUBLIC_API_URL": "http://192.168.191.108:3000"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://capdatos.dyndns.org:3000"
+        "EXPO_PUBLIC_API_URL": "http://192.168.191.108:3000"
       }
     }
   },

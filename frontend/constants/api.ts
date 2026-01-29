@@ -12,8 +12,8 @@ const isDevelopment = (() => {
   }
 })();
 
-const fallbackDevUrl = 'http://192.168.18.79:3000';
-const fallbackProdUrl = 'http://capdatos.dyndns.org:3000';
+const fallbackDevUrl = 'http://192.168.191.108:3000';
+const fallbackProdUrl = 'http://192.168.191.108:3000';
 
 const baseUrl =
   process.env.EXPO_PUBLIC_API_URL ?? 
