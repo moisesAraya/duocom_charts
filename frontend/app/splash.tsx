@@ -8,10 +8,10 @@ import { getUsuarioActual, getClienteConfig, logout } from '@/utils/config';
 export default function SplashScreen() {
   useEffect(() => {
     const checkTokenAndRedirect = async () => {
-      // Agregar un pequeño retraso para asegurar que el Root Layout esté montado
+      // Agregar un retraso mayor para asegurar que el Root Layout esté montado en producción
       setTimeout(() => {
         router.replace('/login');
-      }, 100);
+      }, 500);
     };
     checkTokenAndRedirect();
   }, []);
