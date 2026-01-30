@@ -48,6 +48,15 @@ const createClient = (options) => {
     return client;
 };
 const openAttachment = async (options) => {
+    // LOG: Mostrar la configuración real usada para la conexión
+    console.info('[firebirdPool] Connecting with config:', {
+        host: options.host,
+        port: options.port,
+        database: options.database,
+        user: options.user,
+        password: options.password,
+        client: options.client,
+    });
     const client = createClient(options);
     const uri = buildDatabaseUri(options);
     try {

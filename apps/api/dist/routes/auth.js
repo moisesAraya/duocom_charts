@@ -39,7 +39,9 @@ const buildClienteConfig = (row) => {
     const rut = readField(row, 'RUT');
     const razonSocial = readField(row, 'RZ');
     const ip = readField(row, 'IP');
-    const puerto = parseNumber(readField(row, 'PUERTO'), 3050);
+    // Usar config.firebird.port si no hay valor en la base
+    const puertoRaw = readField(row, 'PUERTO');
+    const puerto = puertoRaw && puertoRaw.trim() !== '' ? Number.parseInt(puertoRaw, 10) : config_1.config.firebird.port;
     const bdAlias = readField(row, 'DBALIAS') || readField(row, 'BDALIAS');
     const url1 = readField(row, 'URL1');
     const url2 = readField(row, 'URL2');
@@ -107,20 +109,32 @@ router.post('/login', apiKey_1.apiKeyMiddleware, async (req, res, next) => {
         const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
         const password = typeof req.body?.password === 'string' ? req.body.password : '';
         if (!username || !password) {
-            res
-                .status(400)
-                .json({ success: false, error: 'Usuario y contraseña son requeridos' });
+            res.status(400).json({ success: false, error: 'Usuario y contraseña son requeridos' });
             return;
         }
-        // MODO DESARROLLO: Login simplificado sin validación de RUT
-        // eslint-disable-next-line no-console
-        console.log(`🔍 [BACKEND] Login DESARROLLO para ${username}`);
-        // Generar token con RUT especial 'DESARROLLO'
-        const token = jsonwebtoken_1.default.sign({ rut: 'DESARROLLO' }, config_1.config.jwtSecret, {
+        // Parse cliente config from header
+        let clienteConfig = null;
+        const clienteConfigHeader = req.headers['x-cliente-config'];
+        if (clienteConfigHeader) {
+            try {
+                clienteConfig = JSON.parse(clienteConfigHeader);
+            }
+            catch (error) {
+                console.error('Error parsing cliente config:', error);
+            }
+        }
+        if (!clienteConfig) {
+            res.status(400).json({ success: false, error: 'Configuración del cliente requerida' });
+            return;
+        }
+        // Build database path
+        const dbPath = `C:\\DuoCOM\\BDatos\\${clienteConfig.bdAlias}.Fdb`;
+        // For now, accept any username/password and return the cliente config
+        // TODO: Implement actual authentication against the client's database
+        console.log(`🔍 [BACKEND] Login para usuario ${username} en BD: ${dbPath}`);
+        const token = jsonwebtoken_1.default.sign({ razonSocial: clienteConfig.razonSocial }, config_1.config.jwtSecret, {
             expiresIn: config_1.config.jwtExpiresIn,
         });
-        // eslint-disable-next-line no-console
-        console.log('✅ [BACKEND] Login exitoso (MODO DESARROLLO)');
         res.json({
             success: true,
             data: {
@@ -129,6 +143,12 @@ router.post('/login', apiKey_1.apiKeyMiddleware, async (req, res, next) => {
                 nombre: username,
                 rol: 'admin',
                 token: token,
+                cliente: {
+                    ...clienteConfig,
+                    bdAlias: dbPath, // Use full path
+                    user: config_1.config.firebird.user,
+                    clave: config_1.config.firebird.password,
+                },
             },
         });
     }

@@ -49,16 +49,47 @@ const fetchUserRecord = async (rut: number): Promise<UserRecord | null> => {
 };
 
 export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
-  // MODO DESARROLLO: Aceptar cualquier token y usar la configuración del .env
-  const dbConfig: FirebirdConnectionConfig = {
-    host: config.firebird.host,
-    port: config.firebird.port,
-    database: config.firebird.database,
-    user: config.firebird.user,
-    password: config.firebird.password,
-    client: config.firebird.client ?? undefined,
-  };
-  req.user = { rut: 0 };
-  req.dbConfig = dbConfig;
-  next();
+  try {
+    const authHeader = req.headers.authorization;
+    let dbConfig: FirebirdConnectionConfig;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const decoded = jwt.verify(token, config.jwtSecret) as any;
+
+        // Si el token contiene información del cliente, usar la base de datos del cliente
+        if (decoded.rut && decoded.ip && decoded.bdAlias) {
+          dbConfig = {
+            host: decoded.ip,
+            port: decoded.puerto || config.firebird.port,
+            database: `C:\\DuoCOM\\BDatos\\${decoded.bdAlias}.Fdb`,
+            user: config.firebird.user,
+            password: config.firebird.password,
+            client: config.firebird.client ?? undefined,
+          };
+          req.user = { rut: parseRutNumber(decoded.rut) || 0 };
+          req.dbConfig = dbConfig;
+          return next();
+        }
+      } catch (jwtError) {
+        // Token inválido, continuar con base de datos principal
+      }
+    }
+
+    // Usar base de datos principal (DUOCOMAPPS.Fdb) para validaciones y cuando no hay token
+    dbConfig = {
+      host: config.firebird.host,
+      port: config.firebird.port,
+      database: config.firebird.database,
+      user: config.firebird.user,
+      password: config.firebird.password,
+      client: config.firebird.client ?? undefined,
+    };
+    req.user = { rut: 0 };
+    req.dbConfig = dbConfig;
+    next();
+  } catch (error) {
+    next(error);
+  }
 };

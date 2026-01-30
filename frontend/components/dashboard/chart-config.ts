@@ -20,6 +20,6 @@ export const makeChartConfig = (
     strokeWidth: String(options?.dotStrokeWidth ?? 2),
     stroke: `rgba(${rgb}, 1)`,
   },
-  propsForLabels: { fontSize: 11 },
+  propsForLabels: { fontSize: 12 },
   propsForBackgroundLines: { stroke: '#E5E7EB' },
 });

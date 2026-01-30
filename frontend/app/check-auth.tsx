@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRootNavigationState, useRouter } from 'expo-router';
-import { getUsuarioActual, getClienteConfig, logout } from '../utils/config';
+import { getUsuarioActual, getClienteConfig, logout } from '@/utils/config';
 
 export default function SplashScreen() {
   const router = useRouter();

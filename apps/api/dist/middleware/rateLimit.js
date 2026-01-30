@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rateLimitMiddleware = void 0;
 const WINDOW_MS = 15 * 60 * 1000;
-const MAX_REQUESTS = 100;
+const MAX_REQUESTS = 1000;
 const entries = new Map();
 const rateLimitMiddleware = (req, res, next) => {
     const key = req.ip ?? 'unknown';

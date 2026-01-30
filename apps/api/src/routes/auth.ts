@@ -137,20 +137,36 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
       return;
     }
 
-    // Login solo con datos fijos de La Torre
-    // eslint-disable-next-line no-console
-    console.log(`🔍 [BACKEND] Login para usuario ${username} (solo La Torre)`);
+    // Parse cliente config from header
+    let clienteConfig: ClienteConfig | null = null;
+    const clienteConfigHeader = req.headers['x-cliente-config'] as string;
+    if (clienteConfigHeader) {
+      try {
+        clienteConfig = JSON.parse(clienteConfigHeader);
+      } catch (error) {
+        console.error('Error parsing cliente config:', error);
+      }
+    }
 
-    const cliente = {
-      ip: "192.168.19.78",
-      puerto: 3050,
-      bdAlias: "C:\\DuoCOM\\BDatos\\LaTorre.FDB",
-      user: "SYSDBA",
-      clave: "masterkey",
-      razonSocial: "La Torre"
-    };
+    if (!clienteConfig) {
+      res.status(400).json({ success: false, error: 'Configuración del cliente requerida' });
+      return;
+    }
 
-    const token = jwt.sign({ razonSocial: cliente.razonSocial }, config.jwtSecret, {
+    // Build database path
+    const dbPath = `C:\\DuoCOM\\BDatos\\${clienteConfig.bdAlias}.Fdb`;
+
+    // For now, accept any username/password and return the cliente config
+    // TODO: Implement actual authentication against the client's database
+    console.log(`🔍 [BACKEND] Login para usuario ${username} en BD: ${dbPath}`);
+
+    const token = jwt.sign({ 
+      razonSocial: clienteConfig.razonSocial,
+      rut: clienteConfig.rut,
+      ip: clienteConfig.ip,
+      puerto: clienteConfig.puerto,
+      bdAlias: clienteConfig.bdAlias
+    }, config.jwtSecret, {
       expiresIn: config.jwtExpiresIn as any,
     });
 
@@ -162,7 +178,12 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
         nombre: username,
         rol: 'admin',
         token: token,
-        cliente: cliente,
+        cliente: {
+          ...clienteConfig,
+          bdAlias: dbPath, // Use full path
+          user: config.firebird.user,
+          clave: config.firebird.password,
+        },
       },
     });
   } catch (error) {

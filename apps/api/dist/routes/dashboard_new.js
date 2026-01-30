@@ -235,7 +235,8 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
             const sucursal = toString(row.sucursal) || 'N/A';
             if (branches.length && !branches.includes(sucursal))
                 continue;
-            const total = toNumber(row.total);
+            // Ajustar a millones (M$)
+            const total = toNumber(row.total) / 1000000;
             const key = `${sucursal}::${anio}`;
             totals.set(key, (totals.get(key) ?? 0) + total);
         }
@@ -245,6 +246,28 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
             return { sucursal, anio: Number(anioRaw), total };
         })
             .sort((a, b) => a.anio - b.anio);
+        res.json({ success: true, data });
+    }
+    catch (error) {
+        next(error);
+    }
+});
+// Endpoint para el gráfico de Análisis Ventas Mensual
+router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
+    try {
+        const dbConfig = getDbConfig(req);
+        const ano = Number.parseInt(String(req.query.ano ?? new Date().getFullYear()), 10);
+        // El mes debe tomarse tal cual del query, sin sumar ni restar 1
+        const mes = Number.parseInt(String(req.query.mes ?? (new Date().getMonth() + 1)), 10);
+        // El SP espera año y mes como parámetros
+        const rows = await runProcedure(dbConfig, 'Graf_VtaMes_Suc', [ano, mes]);
+        // Normalizar nombres de campos para el frontend
+        const data = rows.map(row => ({
+            IdSucusal: row.idsucusal ?? row.id_sucursal ?? row.idsucursal ?? 0,
+            Sucursal: toString(row.sucursal ?? row.nombre_sucursal ?? row.suc ?? ''),
+            Día: row.dia ?? row.día ?? row.dia_mes ?? row.dia_del_mes ?? 0,
+            Total: toNumber(row.total ?? row.total_dia ?? row.venta ?? 0)
+        }));
         res.json({ success: true, data });
     }
     catch (error) {
@@ -331,7 +354,7 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
 router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [
                 { producto: 'Producto A', sucursal: 'Sucursal 1', stock: 100, total_venta: 10000, stock_min: 50, stock_max: 200 },
                 { producto: 'Producto B', sucursal: 'Sucursal 1', stock: 150, total_venta: 15000, stock_min: 75, stock_max: 300 },
@@ -369,7 +392,7 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
 router.get('/dashboard/productos-rotacion', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [
                 { producto: 'Producto A', rotacion: 500 },
                 { producto: 'Producto B', rotacion: 450 },
@@ -407,7 +430,7 @@ router.get('/dashboard/productos-rotacion', async (req, res, next) => {
 router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [
                 { producto: 'Producto A', rentabilidad: 2000 },
                 { producto: 'Producto B', rentabilidad: 1800 },
@@ -445,7 +468,7 @@ router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
 router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [
                 { cliente: 'Cliente 1', sucursal: 'Sucursal 1', saldo: 5000, dias: 15, documento: 'DOC001' },
                 { cliente: 'Cliente 2', sucursal: 'Sucursal 1', saldo: 4000, dias: 20, documento: 'DOC002' },
@@ -484,7 +507,7 @@ router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
 router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [
                 { proveedor: 'Proveedor 1', sucursal: 'Sucursal 1', saldo: 8000, dias: 10, documento: 'DOCP001' },
                 { proveedor: 'Proveedor 2', sucursal: 'Sucursal 1', saldo: 6000, dias: 15, documento: 'DOCP002' },
@@ -520,7 +543,7 @@ router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
 router.get('/dashboard/clientes-morosos', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [
                 { cliente: 'Cliente Moroso 1', saldo: 10000, dias: 45, sucursal: 'Sucursal 1' },
                 { cliente: 'Cliente Moroso 2', saldo: 8000, dias: 50, sucursal: 'Sucursal 1' },
@@ -559,7 +582,7 @@ router.get('/dashboard/clientes-morosos', async (req, res, next) => {
 router.get('/dashboard/proyeccion-ventas-mes', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [
                 { dia: 1, ventas: 5000, proyeccion: 5000 },
                 { dia: 2, ventas: 6000, proyeccion: 6000 },
@@ -609,7 +632,7 @@ router.get('/dashboard/proyeccion-ventas-mes', async (req, res, next) => {
 router.get('/dashboard/proyeccion-iva', async (req, res, next) => {
     try {
         // En desarrollo, devolver datos hardcodeados
-        if (process.env.NODE_ENV !== 'production') {
+        if (false) {
             const data = [{ total_estimado: 300000, iva_estimado: 57000 }];
             res.json({ success: true, data });
             return;

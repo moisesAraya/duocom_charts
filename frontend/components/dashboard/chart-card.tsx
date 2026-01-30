@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React, { useMemo, useRef, useEffect, useState } from "react";
 import {
   Animated,
   Modal,
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-chart-kit";
 import { makeChartConfig } from "./chart-config";
+import { useDashboardFilters } from "./filters-context";
 
 const PIE_COLORS = [
   "rgba(59, 130, 246, 1)",
@@ -32,15 +33,22 @@ interface ChartCardProps {
   title: string;
   subtitle?: string;
 
-  /** ✅ NUEVO: contenido bajo el título y antes del gráfico (controles, filtros, chips, etc.) */
+  /** Contenido bajo el título y antes del gráfico (controles, filtros, chips, etc.) */
   headerContent?: React.ReactNode;
+  footerContent?: React.ReactNode;
 
   isLoading?: boolean;
   isEmpty?: boolean;
   emptyMessage?: string;
+
+  /** si true, el gráfico puede hacer scroll horizontal */
   scrollable?: boolean;
+
+  /** ancho mínimo del gráfico (NO de la card) */
   minWidth?: number;
+
   showValuesOnTop?: boolean;
+
   data: {
     labels: string[];
     datasets: {
@@ -48,33 +56,39 @@ interface ChartCardProps {
       color?: (opacity: number) => string;
       colors?: ((opacity: number) => string)[];
       strokeWidth?: number;
-
-      /**
-       * ✅ Opcional: para diferenciar líneas punteadas vs sólidas
-       * (react-native-chart-kit lo soporta en LineChart datasets)
-       */
       strokeDasharray?: number[];
     }[];
     legend?: string[];
   };
+
   detailLabels?: string[];
   kind?: ChartKind;
   colorRgb: string;
   width: number;
   height?: number;
+
   xLabel?: string;
   yLabel?: string;
+
+  yAxisSuffix?: string;
+
   xLabelAlign?: "left" | "center" | "right";
+
   formatValue?: (value: number) => string;
   formatDetailValue?: (value: number) => string;
   formatAxisValue?: (value: number) => string;
+
   detailTrigger?: "tap" | "button";
   onBarPress?: (index: number) => void;
+
   dotRadius?: number;
   dotStrokeWidth?: number;
+
   hideHint?: boolean;
+
   barTapPaddingRatio?: number;
   barTapMinHeight?: number;
+
   containerStyle?: ViewStyle;
   enterDelay?: number;
 
@@ -83,6 +97,9 @@ interface ChartCardProps {
    * Internamente -> segments (cantidad de líneas del eje Y).
    */
   yAxisInterval?: number;
+
+  showSucursalPicker?: boolean;
+  sucursales?: string[];
 }
 
 /* =========================
@@ -138,6 +155,7 @@ export const ChartCard = ({
   title,
   subtitle,
   headerContent,
+  footerContent,
   isLoading = false,
   isEmpty = false,
   emptyMessage = "Sin datos para mostrar.",
@@ -152,6 +170,7 @@ export const ChartCard = ({
   height = 260,
   xLabel,
   yLabel,
+  yAxisSuffix,
   formatValue,
   formatDetailValue,
   formatAxisValue,
@@ -165,16 +184,21 @@ export const ChartCard = ({
   containerStyle,
   enterDelay = 0,
   yAxisInterval,
+  showSucursalPicker = false,
+  sucursales = [],
 }: ChartCardProps) => {
   const anim = useRef(new Animated.Value(0)).current;
   const safeData = data || { labels: [], datasets: [] };
 
-  const [selection, setSelection] = useState<{
+  const [detail, setDetail] = useState<{
     label: string;
     rows: { series: string; value: string }[];
   } | null>(null);
 
-  const [detail, setDetail] = useState<typeof selection | null>(null);
+  const filtersContext = useDashboardFilters();
+  const filters = filtersContext;
+  const setFilters = filtersContext.setFilters ?? (() => {});
+  const [showPicker, setShowPicker] = useState(false);
 
   useEffect(() => {
     Animated.timing(anim, {
@@ -232,7 +256,7 @@ export const ChartCard = ({
   };
 
   /**
-   * 🎯 HIT TESTING REAL DE BARRA
+   * HIT TESTING BARRAS
    */
   const handleBarTap = (x: number, y: number, contentWidth: number) => {
     if (!safeData.labels.length) return;
@@ -249,20 +273,16 @@ export const ChartCard = ({
     if (maxValue <= 0) return;
 
     const datasetCount = Math.max(1, safeData.datasets.length);
-    const barWidthRatio = barTapPaddingRatio;
-    const barGroupWidth = segmentWidth * barWidthRatio;
-    const barGroupLeft =
-      index * segmentWidth + (segmentWidth - barGroupWidth) / 2;
+    const barGroupWidth = segmentWidth * barTapPaddingRatio;
+    const barGroupLeft = index * segmentWidth + (segmentWidth - barGroupWidth) / 2;
     const barGroupRight = barGroupLeft + barGroupWidth;
 
     if (x < barGroupLeft || x > barGroupRight) return;
 
     const barSlotWidth = barGroupWidth / datasetCount;
     const rawDatasetIndex = Math.floor((x - barGroupLeft) / barSlotWidth);
-    const datasetIndex = Math.min(
-      datasetCount - 1,
-      Math.max(0, rawDatasetIndex),
-    );
+    const datasetIndex = Math.min(datasetCount - 1, Math.max(0, rawDatasetIndex));
+
     const valueAtIndex = safeData.datasets[datasetIndex]?.data[index] ?? 0;
     if (valueAtIndex <= 0) return;
 
@@ -283,9 +303,6 @@ export const ChartCard = ({
     if (y < barTop || y > barBottom) return;
 
     const detailPayload = buildDetail(index, datasetIndex);
-    if (!detailPayload) return;
-
-    setSelection(detailPayload);
     setDetail(detailPayload);
     onBarPress?.(index);
   };
@@ -304,9 +321,6 @@ export const ChartCard = ({
       : undefined;
 
     const detailPayload = buildDetail(payload.index, datasetIndex);
-    if (!detailPayload) return;
-
-    setSelection(detailPayload);
     if (triggerMode === "tap") setDetail(detailPayload);
   };
 
@@ -317,21 +331,20 @@ export const ChartCard = ({
       { dotRadius, dotStrokeWidth },
     );
 
-    if (kind === "bar") {
-      return {
-        ...baseConfig,
-        strokeWidth: 0,
-        propsForBackgroundLines: { stroke: "transparent" },
-      };
-    }
-
     return {
       ...baseConfig,
-      propsForDots: undefined,
+      strokeWidth: kind === "bar" ? 0 : baseConfig.strokeWidth,
+
+      // ✅ FIX: quita el "anillo" azul de los dots removiendo los dots en line charts
+      propsForDots: kind === "line" ? undefined : baseConfig.propsForDots,
+
+      fillShadowGradientOpacity:
+        kind === "line" ? 0 : baseConfig.fillShadowGradientOpacity,
     };
   }, [colorRgb, dotRadius, dotStrokeWidth, formatAxisValue, kind]);
 
-  const contentWidth = minWidth && minWidth > width ? minWidth : width;
+  // ✅ ancho del gráfico (solo si necesitas)
+  const chartWidth = minWidth && minWidth > width ? minWidth : width;
 
   const pieData =
     kind === "pie"
@@ -350,17 +363,13 @@ export const ChartCard = ({
               legendFontSize: 12,
             };
           })
-          .filter(
-            (item) => Number.isFinite(item.population) && item.population > 0,
-          )
+          .filter((item) => Number.isFinite(item.population) && item.population > 0)
       : [];
 
   const computedIsEmpty =
     isEmpty ||
-    !safeData.datasets ||
-    safeData.datasets.length === 0 ||
-    !safeData.labels ||
-    safeData.labels.length === 0 ||
+    !safeData.datasets?.length ||
+    !safeData.labels?.length ||
     (kind === "pie" && pieData.length === 0);
 
   const maxValue = useMemo(() => getMaxValue(safeData), [safeData]);
@@ -382,18 +391,37 @@ export const ChartCard = ({
     return undefined;
   }, [formatAxisValue]);
 
+  // ✅ Fix CLIPPING labels eje X cuando line + scrollable
+  const extraBottomForXLabels = scrollable && kind === "line" ? 22 : 0;
+  const effectiveHeight = height + extraBottomForXLabels;
+
   return (
     <Animated.View style={[styles.card, animatedStyle, containerStyle]}>
-      {/* Header */}
       <View style={{ marginBottom: 12 }}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-
-        {/* ✅ Controles dentro de la misma card */}
-        {headerContent ? (
-          <View style={styles.headerContent}>{headerContent}</View>
+        {headerContent ? <View style={styles.headerContent}>{headerContent}</View> : null}
+        {showSucursalPicker ? (
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
+            <Text style={{ fontSize: 14, color: "#666", marginRight: 8 }}>Sucursal:</Text>
+            <Pressable
+              style={{
+                borderWidth: 1,
+                borderColor: "#ccc",
+                borderRadius: 4,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                backgroundColor: "#BFDBFE",
+              }}
+              onPress={() => setShowPicker(true)}
+            >
+              <Text>{filters.sucursal || "Todas"}</Text>
+            </Pressable>
+          </View>
         ) : null}
       </View>
+
+      {footerContent ? <View style={{ marginTop: 10 }}>{footerContent}</View> : null}
 
       {isLoading ? (
         <View style={styles.loadingWrap}>
@@ -405,7 +433,7 @@ export const ChartCard = ({
       ) : (
         <>
           <View style={{ flexDirection: "row", alignItems: "center" }}>
-            {/* Etiqueta eje Y lateral (visual) */}
+            {/* Label Y lateral */}
             {yLabel ? (
               <View
                 style={{
@@ -430,16 +458,16 @@ export const ChartCard = ({
               </View>
             ) : null}
 
+            {/* ✅ SOLO EL GRÁFICO SCROLLEA */}
             {scrollable ? (
               <View style={{ flex: 1 }}>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator
-                  contentContainerStyle={{ width: contentWidth }}
-                  // ✅ asegura que el contenido puede exceder el ancho
+                  contentContainerStyle={{ width: chartWidth }}
                   bounces={false}
                   nestedScrollEnabled
-                  style={{ height }}  // ✅ Agrega esto para definir la altura del ScrollView
+                  style={{ height: effectiveHeight }}
                 >
                   {kind === "bar" ? (
                     <Pressable
@@ -447,39 +475,38 @@ export const ChartCard = ({
                         handleBarTap(
                           e.nativeEvent.locationX,
                           e.nativeEvent.locationY,
-                          contentWidth,
+                          chartWidth,
                         )
                       }
                     >
                       {(() => {
                         const hasCustomColors = Boolean(
-                          safeData.datasets[0]?.colors &&
-                          safeData.datasets[0].colors.length,
+                          safeData.datasets[0]?.colors?.length,
                         );
                         return (
                           <BarChart
                             data={safeData}
-                            width={contentWidth}
+                            width={chartWidth}
                             height={height}
                             chartConfig={chartConfig}
                             style={styles.chart}
                             showValuesOnTopOfBars={showValuesOnTop}
-                            withInnerLines={false}
+                            withInnerLines
                             withCustomBarColorFromData={hasCustomColors}
                             flatColor={hasCustomColors}
                             fromZero
                             segments={segments}
-                            yAxisLabel={yLabel ?? ""}
-                            yAxisSuffix=""
+                            yAxisLabel=""
+                            yAxisSuffix={yAxisSuffix ?? ""}
                           />
                         );
                       })()}
                     </Pressable>
-                  ) : (
+                  ) : kind === "line" ? (
                     <LineChart
                       data={safeData}
-                      width={contentWidth}
-                      height={height}
+                      width={chartWidth}
+                      height={effectiveHeight}
                       chartConfig={chartConfig}
                       style={styles.chart}
                       bezier
@@ -489,7 +516,18 @@ export const ChartCard = ({
                       fromZero
                       withShadow={false}
                     />
-                  )}
+                  ) : pieData.length > 0 ? (
+                    <PieChart
+                      data={pieData}
+                      width={chartWidth}
+                      height={height}
+                      accessor="population"
+                      backgroundColor="transparent"
+                      paddingLeft="15"
+                      chartConfig={chartConfig}
+                      style={styles.chart}
+                    />
+                  ) : null}
                 </ScrollView>
               </View>
             ) : (
@@ -500,30 +538,29 @@ export const ChartCard = ({
                       handleBarTap(
                         e.nativeEvent.locationX,
                         e.nativeEvent.locationY,
-                        contentWidth,
+                        width,
                       )
                     }
                   >
                     {(() => {
                       const hasCustomColors = Boolean(
-                        safeData.datasets[0]?.colors &&
-                        safeData.datasets[0].colors.length,
+                        safeData.datasets[0]?.colors?.length,
                       );
                       return (
                         <BarChart
                           data={safeData}
-                          width={contentWidth}
+                          width={width}
                           height={height}
                           chartConfig={chartConfig}
                           style={styles.chart}
                           showValuesOnTopOfBars={showValuesOnTop}
-                          withInnerLines={false}
+                          withInnerLines
                           withCustomBarColorFromData={hasCustomColors}
                           flatColor={hasCustomColors}
                           fromZero
                           segments={segments}
-                          yAxisLabel={yLabel ?? ""}
-                          yAxisSuffix=""
+                          yAxisLabel=""
+                          yAxisSuffix={yAxisSuffix ?? ""}
                         />
                       );
                     })()}
@@ -531,7 +568,7 @@ export const ChartCard = ({
                 ) : kind === "line" ? (
                   <LineChart
                     data={safeData}
-                    width={contentWidth}
+                    width={width}
                     height={height}
                     chartConfig={chartConfig}
                     style={styles.chart}
@@ -540,12 +577,12 @@ export const ChartCard = ({
                     segments={segments}
                     formatYLabel={formatYLabel}
                     fromZero
-                    withShadow={false} // ✅ evita el "relleno" azul
+                    withShadow={false}
                   />
                 ) : pieData.length > 0 ? (
                   <PieChart
                     data={pieData}
-                    width={contentWidth}
+                    width={width}
                     height={height}
                     accessor="population"
                     backgroundColor="transparent"
@@ -565,6 +602,10 @@ export const ChartCard = ({
               </Text>
             </View>
           ) : null}
+
+          {!hideHint && triggerMode === "tap" ? (
+            <Text style={styles.hint}>Toca para ver detalle</Text>
+          ) : null}
         </>
       )}
 
@@ -581,10 +622,41 @@ export const ChartCard = ({
                 </View>
               ))}
             </View>
-            <Pressable
-              style={styles.modalButton}
-              onPress={() => setDetail(null)}
-            >
+            <Pressable style={styles.modalButton} onPress={() => setDetail(null)}>
+              <Text style={styles.modalButtonText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
+
+      <Modal transparent visible={showPicker} animationType="fade">
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowPicker(false)}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Seleccionar Sucursal</Text>
+            <ScrollView>
+              <Pressable
+                style={styles.modalValueRow}
+                onPress={() => {
+                  setFilters({ ...filters, sucursal: "" });
+                  setShowPicker(false);
+                }}
+              >
+                <Text style={styles.modalLabel}>Todas</Text>
+              </Pressable>
+              {sucursales.map((suc) => (
+                <Pressable
+                  key={suc}
+                  style={styles.modalValueRow}
+                  onPress={() => {
+                    setFilters({ ...filters, sucursal: suc });
+                    setShowPicker(false);
+                  }}
+                >
+                  <Text style={styles.modalLabel}>{suc}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable style={styles.modalButton} onPress={() => setShowPicker(false)}>
               <Text style={styles.modalButtonText}>Cerrar</Text>
             </Pressable>
           </View>
@@ -601,7 +673,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 18,
     elevation: 3,
-    overflow: "hidden", // ✅ clave: evita que el gráfico se salga del recuadro
+    overflow: "hidden",
   },
   title: {
     fontSize: 18,
@@ -633,6 +705,12 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     fontSize: 14,
     paddingVertical: 12,
+  },
+  hint: {
+    marginTop: 10,
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
   },
   modalBackdrop: {
     flex: 1,

@@ -4,7 +4,7 @@
     "slug": "charts_duocom",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/img_.png",
+    "icon": "./assets/images/img_.png",
     "scheme": "chartsduocom",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -13,7 +13,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/img_.png"
+        "foregroundImage": "./assets/images/img_.png"
       },
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
@@ -26,22 +26,10 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/img.png"
+      "favicon": "./assets/images/img.png"
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/img.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
-        }
-      ],
       [
         "expo-build-properties",
         {

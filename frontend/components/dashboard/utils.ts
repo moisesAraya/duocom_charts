@@ -29,8 +29,11 @@ export const formatCompact = (value: number): string => {
   if (!Number.isFinite(value)) {
     return '0';
   }
+  if (Math.abs(value) >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toFixed(1)}B`;
+  }
   if (Math.abs(value) >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
+    return `${(value / 1_000_000).toFixed(0)}M`;
   }
   if (Math.abs(value) >= 1_000) {
     return `${(value / 1_000).toFixed(1)}K`;

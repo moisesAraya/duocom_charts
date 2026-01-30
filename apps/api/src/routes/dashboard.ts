@@ -925,6 +925,38 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
   }
 });
 
+// Endpoint alternativo para compatibilidad con frontend
+router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const ano = parseNumber(toString(req.query.ano), new Date().getFullYear());
+    const mes = parseNumber(toString(req.query.mes), new Date().getMonth() + 1);
+
+    // eslint-disable-next-line no-console
+    console.log(`📊 [BACKEND] Graf Vta Mes Suc: año=${ano}, mes=${mes}`);
+
+    // NOTA: En LaTorre la columna es 'Id# Sucursal'.
+    const sql = 'SELECT * FROM "Graf_VtaMes_Suc"(?, ?)';
+    const rows = await query<Record<string, unknown>>(sql, [ano, mes], dbConfig);
+
+    // eslint-disable-next-line no-console
+    console.log(`✅ [BACKEND] Retrieved ${rows.length} rows from Graf_VtaMes_Suc`);
+    if (rows.length > 0) {
+      console.log(`📋 [BACKEND] Sample row:`, JSON.stringify(rows[0], null, 2));
+    }
+
+    // Devolver las filas crudas tal como las espera el frontend
+    res.json({
+      success: true,
+      data: rows,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('❌ [BACKEND] Error en graf vta mes suc:', error);
+    next(error);
+  }
+});
+
 // Ventas Anuales - Tabla _ProyVentaAnual
 router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
   try {
@@ -994,6 +1026,23 @@ router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('❌ [BACKEND] Error en ventas anuales tabla:', error);
+    next(error);
+  }
+});
+
+router.get('/dashboard/proy-venta-anual', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const pCantAños = parseNumber(String(req.query.pCantAños ?? '5'), 5);
+    const rows = await runProcedure(dbConfig, '_ProyVentaAnual', [pCantAños]);
+    const filteredRows = rows.filter(r => r && r.sucursal && r.ano !== undefined && r.mes !== undefined && r.total !== undefined);
+    res.json({
+      success: true,
+      data: filteredRows,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('❌ [BACKEND] Error en proy-venta-anual:', error);
     next(error);
   }
 });
