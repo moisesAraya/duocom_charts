@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getClienteConfig, refreshClienteConfig } from '@/utils/config';
 
 export const ScreenShell = ({
@@ -24,6 +24,14 @@ export const ScreenShell = ({
       if (!cliente) {
         // Si no hay config en storage, refresca desde backend
         cliente = await refreshClienteConfig();
+        if (!cliente) {
+          // Si falló el refresh, mostrar alerta
+          Alert.alert(
+            'Error de configuración',
+            'No se pudo cargar la configuración del cliente. Verifica tu conexión a internet e intenta nuevamente.',
+            [{ text: 'OK' }]
+          );
+        }
       }
       if (!mounted) return;
       setCompanyName(cliente?.razonSocial || cliente?.nombre || cliente?.nombreFantasia || '');

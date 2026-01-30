@@ -14,12 +14,15 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
   useWindowDimensions,
 } from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
+import { LineChart } from "react-native-chart-kit";
+import { Text as SvgText } from "react-native-svg";
 
 /* =========================
    TYPES
@@ -175,10 +178,12 @@ export default function VentasScreen() {
         params: baseRequestParams,
       });
       setVentasGrupo(
-        (res.data?.data ?? []).filter((r: any) => r).map((r: any) => ({
-          grupo: String(r.grupo || r.Grupo || r.GRUPO || "").trim(),
-          monto: toNumber(r.monto || r.Monto || r.MONTO),
-        })),
+        (res.data?.data ?? [])
+          .filter((r: any) => r)
+          .map((r: any) => ({
+            grupo: String(r.grupo || r.Grupo || r.GRUPO || "").trim(),
+            monto: toNumber(r.monto || r.Monto || r.MONTO),
+          })),
       );
     } catch {
       setVentasGrupo([]);
@@ -194,11 +199,17 @@ export default function VentasScreen() {
         params: medioPagoParams,
       });
       setVentasMedioPago(
-        (res.data?.data ?? []).filter((r: any) => r).map((r: any) => ({
-          sucursal: String(r.sucursal || r.Sucursal || r.SUCURSAL || "").trim(),
-          medio_pago: String(r.medio_pago || r.MedioPago || r.MEDIO_PAGO || "").trim(),
-          monto: toNumber(r.monto || r.Monto || r.MONTO),
-        })),
+        (res.data?.data ?? [])
+          .filter((r: any) => r)
+          .map((r: any) => ({
+            sucursal: String(
+              r.sucursal || r.Sucursal || r.SUCURSAL || "",
+            ).trim(),
+            medio_pago: String(
+              r.medio_pago || r.MedioPago || r.MEDIO_PAGO || "",
+            ).trim(),
+            monto: toNumber(r.monto || r.Monto || r.MONTO),
+          })),
       );
     } catch {
       setVentasMedioPago([]);
@@ -214,11 +225,13 @@ export default function VentasScreen() {
         params: ventasAnualesParams,
       });
       setVentasAnuales(
-        (res.data?.data ?? []).filter((r: any) => r).map((r: any) => ({
-          sucursal: String(r.sucursal || r.Sucursal || r.SUCURSAL || "").trim(),
-          anio: Number(r.anio || r.Anio || r.ANO || r.ano || 0),
-          total: toNumber(r.total || r.Total || r.TOTAL),
-        })),
+        (res.data?.data ?? [])
+          .filter((r: any) => r)
+          .map((r: any) => ({
+            sucursal: String(r.sucursal || r.Sucursal || r.SUCURSAL || "").trim(),
+            anio: Number(r.anio || r.Anio || r.ANO || r.ano || 0),
+            total: toNumber(r.total || r.Total || r.TOTAL),
+          })),
       );
     } catch {
       setVentasAnuales([]);
@@ -313,7 +326,14 @@ export default function VentasScreen() {
       datasets: filteredBranches.map((branch, idx) => ({
         data: ventasAnualesYears.map((year) =>
           ventasAnuales
-            .filter((row) => row && row.sucursal && row.anio !== undefined && row.sucursal === branch && row.anio === year)
+            .filter(
+              (row) =>
+                row &&
+                row.sucursal &&
+                row.anio !== undefined &&
+                row.sucursal === branch &&
+                row.anio === year,
+            )
             .reduce((acc, row) => acc + row.total, 0),
         ),
         color: (o: number) => `rgba(${getBranchColor(branch, idx)},${o})`,
@@ -328,8 +348,6 @@ export default function VentasScreen() {
     enabledVentasAnualesBranches,
   ]);
 
-  const sucursalesVentas = useMemo(() => Array.from(new Set(ventasAnuales.filter(r => r && r.sucursal).map(r => r.sucursal))), [ventasAnuales]);
-
   const ventasSucursalRows = useMemo(() => {
     const totals = new Map<string, number>();
     ventasAnuales.forEach((row) => {
@@ -337,9 +355,7 @@ export default function VentasScreen() {
     });
     return Array.from(totals.entries())
       .map(([sucursal, total]) => ({ sucursal, total }))
-      .filter(({ sucursal }) =>
-        enabledVentasSucursalBranches.includes(sucursal),
-      )
+      .filter(({ sucursal }) => enabledVentasSucursalBranches.includes(sucursal))
       .sort((a, b) => b.total - a.total);
   }, [ventasAnuales, enabledVentasSucursalBranches]);
 
@@ -396,7 +412,7 @@ export default function VentasScreen() {
 
   const ventasMedioPagoData = useMemo(() => {
     const map = new Map<string, number>();
-    ventasMedioPago.filter(r => r && r.medio_pago).forEach((r) => {
+    ventasMedioPago.filter((r) => r && r.medio_pago).forEach((r) => {
       map.set(r.medio_pago, (map.get(r.medio_pago) ?? 0) + r.monto);
     });
 
@@ -465,9 +481,7 @@ export default function VentasScreen() {
           headerContent={
             ventasAnualesYears.length > 6 ? (
               <View style={{ marginBottom: 8 }}>
-                <Text
-                  style={{ fontSize: 12, color: "#666", textAlign: "center" }}
-                >
+                <Text style={{ fontSize: 12, color: "#666", textAlign: "center" }}>
                   Años disponibles: {ventasAnualesYears.join(" • ")}
                 </Text>
               </View>
@@ -487,9 +501,7 @@ export default function VentasScreen() {
           scrollable={false}
           minWidth={ventasAnualesYears.length * 60}
           isLoading={loadingVentasAnuales}
-          isEmpty={
-            !ventasAnuales.length || !enabledVentasAnualesBranches.length
-          }
+          isEmpty={!ventasAnuales.length || !enabledVentasAnualesBranches.length}
           detailLabels={ventasAnualesYears.map((year) => String(year))}
           detailTrigger="tap"
         />
@@ -679,7 +691,10 @@ export default function VentasScreen() {
                     style={[
                       modal.monthItem,
                       selected
-                        ? { backgroundColor: "#3B82F6", borderColor: "#3B82F6" }
+                        ? {
+                            backgroundColor: "#3B82F6",
+                            borderColor: "#3B82F6",
+                          }
                         : {
                             backgroundColor: "#F0F7FF",
                             borderColor: "#E0E0E0",
@@ -746,7 +761,9 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
   const [loading, setLoading] = useState(false);
   const [cantAños, setCantAños] = useState(pCantAños);
   const [showPicker, setShowPicker] = useState(false);
-  const [expandedSucursales, setExpandedSucursales] = useState<Set<string>>(new Set());
+  const [expandedSucursales, setExpandedSucursales] = useState<Set<string>>(
+    new Set(),
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -761,18 +778,29 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
       .finally(() => setLoading(false));
   }, [cantAños]);
 
-  const rowsFiltered = rows.filter(r => r).map(r => ({
-    sucursal: r.sucursal || r.Sucursal || r.SUCURSAL,
-    ano: r.ano || r.Ano || r.ANO,
-    mes: r.mes || r.Mes || r.MES,
-    total: r.total || r.Total || r.TOTAL,
-  })).filter(r => r.sucursal && r.ano !== undefined && r.mes !== undefined && r.total !== undefined);
+  const rowsFiltered = rows
+    .filter((r) => r)
+    .map((r) => ({
+      sucursal: r.sucursal || r.Sucursal || r.SUCURSAL,
+      ano: r.ano || r.Ano || r.ANO,
+      mes: r.mes || r.Mes || r.MES,
+      total: r.total || r.Total || r.TOTAL,
+    }))
+    .filter(
+      (r) =>
+        r.sucursal &&
+        r.ano !== undefined &&
+        r.mes !== undefined &&
+        r.total !== undefined,
+    );
 
-  // Agrupar por sucursal y mes
   const sucursales = Array.from(new Set(rowsFiltered.map((r) => r.sucursal)));
-  const meses = Array.from(new Set(rowsFiltered.map((r) => r.mes))).sort((a, b) => a - b);
+  const meses = Array.from(new Set(rowsFiltered.map((r) => r.mes))).sort(
+    (a, b) => a - b,
+  );
+
   const toggleExpanded = (suc: string) => {
-    setExpandedSucursales(prev => {
+    setExpandedSucursales((prev) => {
       const next = new Set(prev);
       if (next.has(suc)) next.delete(suc);
       else next.add(suc);
@@ -781,9 +809,11 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
   };
 
   const currentYear = new Date().getFullYear();
-  const anios = Array.from({ length: cantAños }, (_, i) => currentYear - cantAños + 1 + i);
+  const anios = Array.from(
+    { length: cantAños },
+    (_, i) => currentYear - cantAños + 1 + i,
+  );
 
-  // Construir tabla
   return (
     <View style={{ marginTop: 32, marginBottom: 32 }}>
       <View
@@ -811,7 +841,6 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
               overflow: "hidden",
             }}
           >
-            {/* Encabezado */}
             <View
               style={{
                 flexDirection: "row",
@@ -869,11 +898,13 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                 Total
               </Text>
             </View>
-            {/* Filas */}
+
             {sucursales.map((suc) => {
               const isExpanded = expandedSucursales.has(suc);
               const sucRows = meses.map((mes) => {
-                const fila = rowsFiltered.filter((r) => r.sucursal === suc && r.mes === mes);
+                const fila = rowsFiltered.filter(
+                  (r) => r.sucursal === suc && r.mes === mes,
+                );
                 const totalesPorAnio = anios.map((anio) => {
                   const filasAnio = fila.filter((f) => f.ano === anio);
                   return filasAnio.reduce((sum, f) => sum + (f.total || 0), 0);
@@ -881,10 +912,14 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                 const totalMes = totalesPorAnio.reduce((a, b) => a + b, 0);
                 return { mes, totalesPorAnio, totalMes };
               });
-              const totalSucursal = sucRows.reduce((sum, row) => sum + row.totalMes, 0);
+
+              const totalSucursal = sucRows.reduce(
+                (sum, row) => sum + row.totalMes,
+                0,
+              );
+
               return (
                 <View key={suc}>
-                  {/* Header de sucursal */}
                   <Pressable
                     onPress={() => toggleExpanded(suc)}
                     style={{
@@ -911,7 +946,7 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                       {isExpanded ? "▼" : "▶"}
                     </Text>
                   </Pressable>
-                  {/* Filas de meses si expandido */}
+
                   {isExpanded &&
                     sucRows.map(({ mes, totalesPorAnio, totalMes }) => (
                       <View
@@ -936,7 +971,11 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                           {suc}
                         </Text>
                         <Text
-                          style={{ width: 120, padding: 8, textAlign: "center" }}
+                          style={{
+                            width: 120,
+                            padding: 8,
+                            textAlign: "center",
+                          }}
                           numberOfLines={1}
                           ellipsizeMode="tail"
                         >
@@ -1009,6 +1048,8 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
 }
 
 function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
+  const { width, height } = useWindowDimensions();
+
   const [ano, setAno] = useState(() => new Date().getFullYear());
   const [mes, setMes] = useState(() => new Date().getMonth() + 1);
   const [loading, setLoading] = useState(false);
@@ -1022,6 +1063,10 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   const [enabledSeries, setEnabledSeries] = useState<Set<number>>(new Set());
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+
+  // ✅ Fullscreen + zoom (zoom REAL por width)
+  const [fsVisible, setFsVisible] = useState(false);
+  const [zoom, setZoom] = useState(1);
 
   const mesesNombres = [
     "Ene",
@@ -1037,10 +1082,15 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
     "Nov",
     "Dic",
   ];
-  const daysInMonth = useMemo(
-    () => new Date(ano, mes, 0).getDate(),
-    [ano, mes],
-  );
+
+  const daysInMonth = useMemo(() => new Date(ano, mes, 0).getDate(), [ano, mes]);
+
+  // ✅ 2 decimales en millones
+  const formatMillions2 = useCallback((v: number) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "0.00M";
+    return `${(n / 1_000_000).toFixed(2)}M`;
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1151,7 +1201,6 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   };
 
   const chartData = useMemo(() => {
-    // ✅ CLAVE: en scrollable NO sparsificar: queremos 1..31
     const labels = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
 
     const datasets: any[] = [];
@@ -1189,6 +1238,43 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
     () => Math.max(chartWidth, daysInMonth * 25),
     [chartWidth, daysInMonth],
   );
+
+  // ✅ Fullscreen orientation (más robusto)
+  const openFullScreen = useCallback(async () => {
+    setZoom(1);
+    try {
+      await ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.LANDSCAPE,
+      );
+    } catch {
+      // no-op
+    } finally {
+      setFsVisible(true);
+    }
+  }, []);
+
+  const closeFullScreen = useCallback(async () => {
+    setFsVisible(false);
+    try {
+      await ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP,
+      );
+    } catch {
+      // no-op
+    }
+  }, []);
+
+  // ✅ medidas fullscreen (Landscape)
+  const fsW = Math.max(width, height);
+  const fsH = Math.min(width, height);
+
+  const fsChartHeight = Math.max(320, fsH - 110);
+
+  // ✅ ZOOM REAL: más ancho => más separación entre puntos
+  const PX_PER_DAY_BASE = 42; // ajusta 38–60 según lo separado que lo quieras
+  const fsMinWidthByDays = daysInMonth * PX_PER_DAY_BASE;
+  const fsBaseChartWidth = Math.max(fsW - 32, fsMinWidthByDays);
+  const fsZoomedChartWidth = Math.round(fsBaseChartWidth * zoom);
 
   return (
     <>
@@ -1269,9 +1355,21 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
               </View>
             ) : null}
 
-            <Text style={{ fontSize: 14, fontWeight: "600", color: "#111" }}>
-              Ventas por Día
-            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "600", color: "#111" }}>
+                Ventas por Día
+              </Text>
+
+              <Pressable onPress={openFullScreen} style={fs.btn}>
+                <Text style={fs.btnText}>Pantalla completa</Text>
+              </Pressable>
+            </View>
           </View>
         }
         data={chartData}
@@ -1284,13 +1382,108 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
         isLoading={loading}
         isEmpty={chartData.datasets.length === 0}
         hideHint
-        scrollable // ✅ ahora sí
-        minWidth={xMinWidth} // ✅ ancho real del chart dentro del scroll
+        scrollable
+        minWidth={xMinWidth}
         yAxisInterval={yAxisStepM}
         formatAxisValue={formatCompact}
         formatDetailValue={formatCurrency}
         dotRadius={4}
       />
+
+      {/* ✅ MODAL FULLSCREEN */}
+      <Modal
+        visible={fsVisible}
+        animationType="fade"
+        onRequestClose={closeFullScreen}
+      >
+        <StatusBar hidden />
+        <View style={fs.container}>
+          <View style={fs.topBar}>
+            <Pressable onPress={closeFullScreen} style={fs.closeBtn}>
+              <Text style={fs.closeText}>Cerrar</Text>
+            </Pressable>
+
+            <Text style={fs.title}>Ventas por Día</Text>
+
+            <View style={fs.zoomRow}>
+              <Pressable
+                onPress={() =>
+                  setZoom((z) => Math.max(1, Number((z - 0.25).toFixed(2))))
+                }
+                style={fs.zoomBtn}
+              >
+                <Text style={fs.zoomText}>−</Text>
+              </Pressable>
+
+              <Pressable onPress={() => setZoom(1)} style={fs.zoomBtn}>
+                <Text style={fs.zoomText}>Reset</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  setZoom((z) => Math.min(3, Number((z + 0.25).toFixed(2))))
+                }
+                style={fs.zoomBtn}
+              >
+                <Text style={fs.zoomText}>+</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* ✅ Scroll horizontal + vertical anidados para permitir ambas direcciones */}
+          <ScrollView bounces={false} showsVerticalScrollIndicator>
+            <ScrollView
+              horizontal
+              bounces={false}
+              showsHorizontalScrollIndicator
+              contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 12 }}
+            >
+              <View style={{ alignSelf: "flex-start", paddingTop: 12 }}>
+                <LineChart
+                  data={chartData}
+                  width={fsZoomedChartWidth}
+                  height={fsChartHeight}
+                  yAxisInterval={1}
+                  formatYLabel={(v) => formatMillions2(Number(v))}
+                  chartConfig={{
+                    backgroundColor: "#fff",
+                    backgroundGradientFrom: "#fff",
+                    backgroundGradientTo: "#fff",
+                    decimalPlaces: 0,
+                    color: (o = 1) => `rgba(59,130,246,${o})`,
+                    labelColor: (o = 1) => `rgba(17,17,17,${o})`,
+                    propsForDots: { r: "4" },
+                    propsForBackgroundLines: { stroke: "rgba(0,0,0,0.08)" },
+                  }}
+                  bezier={false}
+                  withDots
+                  withInnerLines
+                  withOuterLines={false}
+                  fromZero
+                  // ✅ Valores en cada punto (solo fullscreen), con 2 decimales en M
+                  renderDotContent={({ x, y, indexData }) => {
+                    // Si hay MUCHAS series, puede saturar. Si quieres, lo limito a zoom>=1.5
+                    const v = Number(indexData);
+                    if (!Number.isFinite(v) || v === 0) return null;
+
+                    return (
+                      <SvgText
+                        x={x}
+                        y={y - 8}
+                        fontSize="10"
+                        fill="#111"
+                        textAnchor="middle"
+                      >
+                        {formatMillions2(v)}
+                      </SvgText>
+                    );
+                  }}
+                />
+              </View>
+            </ScrollView>
+          </ScrollView>
+        </View>
+      </Modal>
 
       <Modal visible={showYearPicker} transparent animationType="fade">
         <Pressable
@@ -1448,4 +1641,58 @@ const modal = StyleSheet.create({
     borderWidth: 1,
   },
   monthText: { fontSize: 14, textAlign: "center", fontWeight: "600" },
+});
+
+const fs = StyleSheet.create({
+  btn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#3B82F6",
+    backgroundColor: "#F0F7FF",
+  },
+  btnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#3B82F6",
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  topBar: {
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.08)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  closeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: "#111",
+  },
+  closeText: { color: "#fff", fontWeight: "800", fontSize: 12 },
+  title: {
+    flex: 1,
+    textAlign: "center",
+    fontWeight: "800",
+    fontSize: 14,
+    color: "#111",
+  },
+  zoomRow: { flexDirection: "row", gap: 8 },
+  zoomBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.15)",
+    backgroundColor: "#fff",
+  },
+  zoomText: { fontWeight: "800", fontSize: 12, color: "#111" },
 });
