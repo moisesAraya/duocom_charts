@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRootNavigationState, useRouter } from 'expo-router';
-import { getUsuarioActual, getClienteConfig, logout } from '../utils/config';
+import { getUsuarioActual, getClienteConfig, logout, clearSessionIfAppClosed } from '../utils/config';
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -14,13 +14,16 @@ export default function SplashScreen() {
 
     const checkTokenAndRedirect = async () => {
       try {
-        // Si aquí de verdad quieres validar token/config, hazlo acá.
-        // Ejemplo típico: usuario logeado => / (tabs), sino => /login
+        // Verificar si la app se cerró completamente
+        const wasClosedCompletely = await clearSessionIfAppClosed();
+        
+        if (wasClosedCompletely) {
+          // Si se cerró completamente, ir a login
+          router.replace('/login');
+          return;
+        }
 
         const usuario = await getUsuarioActual();
-
-        // (Opcional) Si tu config puede fallar, lo envuelves con try/catch
-        // const cfg = await getClienteConfig();
 
         if (usuario) {
           router.replace('/(tabs)/ventas'); // ir a la pantalla principal de ventas

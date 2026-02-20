@@ -17,6 +17,8 @@ const STORAGE_KEYS = {
   token: '@token',
   cliente: '@cliente',
   user: '@user',
+  APP_STATE: '@app_state',
+  SESSION_TIMESTAMP: '@session_timestamp',
 } as const;
 
 export interface Usuario {
@@ -53,6 +55,11 @@ export async function logout(): Promise<void> {
   await AsyncStorage.multiRemove([
     STORAGE_KEYS.USUARIO_ACTUAL,
     STORAGE_KEYS.CLIENTE_CONFIG,
+    STORAGE_KEYS.token,
+    STORAGE_KEYS.user,
+    STORAGE_KEYS.cliente,
+    STORAGE_KEYS.SESSION_TIMESTAMP,
+    STORAGE_KEYS.APP_STATE,
   ]);
   setAuthToken(null);
 }
@@ -91,8 +98,11 @@ export const setBackendUrl = async (url: string): Promise<void> => {
 };
 
 export const getBackendUrl = async (): Promise<string> => {
+  const resolved = API_CONFIG.BASE_URL.trim();
   const stored = await AsyncStorage.getItem(STORAGE_KEYS.BACKEND_URL);
-  const resolved = stored?.trim() || API_CONFIG.BASE_URL;
+  if (stored?.trim() !== resolved) {
+    await AsyncStorage.setItem(STORAGE_KEYS.BACKEND_URL, resolved);
+  }
   api.defaults.baseURL = resolved;
   return resolved;
 };
@@ -104,6 +114,8 @@ export const setUsuarioActual = async (user: UsuarioActual): Promise<void> => {
     await AsyncStorage.setItem(STORAGE_KEYS.token, user.token);
     setAuthToken(user.token);
   }
+  // Guardar timestamp de inicio de sesión
+  await AsyncStorage.setItem(STORAGE_KEYS.SESSION_TIMESTAMP, Date.now().toString());
 };
 
 export const clearSession = async (): Promise<void> => {
@@ -118,6 +130,34 @@ export const clearSession = async (): Promise<void> => {
 export const hayUsuarioLogueado = async (): Promise<boolean> => {
   const token = await AsyncStorage.getItem(STORAGE_KEYS.token);
   return Boolean(token);
+};
+
+// Marcar que la app entró en background
+export const markAppBackground = async (): Promise<void> => {
+  await AsyncStorage.setItem(STORAGE_KEYS.APP_STATE, 'background');
+};
+
+// Verificar si la app se cerró completamente (no estaba en background)
+export const wasAppClosedCompletely = async (): Promise<boolean> => {
+  const state = await AsyncStorage.getItem(STORAGE_KEYS.APP_STATE);
+  // Si no hay estado guardado, significa que la app se cerró completamente
+  return state !== 'background';
+};
+
+// Marcar que la app está activa de nuevo
+export const markAppActive = async (): Promise<void> => {
+  await AsyncStorage.removeItem(STORAGE_KEYS.APP_STATE);
+};
+
+// Limpiar la sesión si la app se cerró completamente
+export const clearSessionIfAppClosed = async (): Promise<boolean> => {
+  const wasClosed = await wasAppClosedCompletely();
+  if (wasClosed) {
+    await logout();
+    return true;
+  }
+  await markAppActive();
+  return false;
 };
 
 export const esUsuarioAdmin = (user?: UsuarioActual | null): boolean => {

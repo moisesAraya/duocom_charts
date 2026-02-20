@@ -28,6 +28,19 @@ import {
 } from "@/utils/config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
+
+const safeJsonFromResponse = async <T = any>(response: Response): Promise<T | null> => {
+  const raw = await response.text();
+  if (!raw.trim()) return null;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+};
+
 export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -59,7 +72,7 @@ export default function LoginScreen() {
 
   const validarRutAutomatico = async () => {
     try {
-      const API_URL = await getBackendUrl();
+      const API_URL = stripTrailingSlash(await getBackendUrl());
       const response = await fetch(`${API_URL}/api/validar-rut`, {
         method: "POST",
         headers: {
@@ -68,11 +81,11 @@ export default function LoginScreen() {
         },
         body: JSON.stringify({ rut }),
       });
-      const json = await response.json();
-      if (json.success) {
+      const json = await safeJsonFromResponse<{ success?: boolean; data?: any }>(response);
+      if (response.ok && json?.success) {
         setRutValidado(true);
         await setClienteConfig(json.data);
-        setRazonSocial(json.data.razonSocial);
+        setRazonSocial(json.data?.razonSocial ?? "");
       } else {
         setRutValidado(false);
       }
@@ -90,7 +103,7 @@ export default function LoginScreen() {
 
     try {
       setLoading(true);
-      const API_URL = await getBackendUrl();
+      const API_URL = stripTrailingSlash(await getBackendUrl());
       const response = await fetch(`${API_URL}/api/validar-rut`, {
         method: "POST",
         headers: {
@@ -99,14 +112,14 @@ export default function LoginScreen() {
         },
         body: JSON.stringify({ rut }),
       });
-      const json = await response.json();
-      if (json.success) {
+      const json = await safeJsonFromResponse<{ success?: boolean; data?: any; error?: string }>(response);
+      if (response.ok && json?.success) {
         setRutValidado(true);
         await setClienteConfig(json.data);
-        setRazonSocial(json.data.razonSocial);
+        setRazonSocial(json.data?.razonSocial ?? "");
       } else {
         setRutValidado(false);
-        Alert.alert("RUT Inválido", json.error || "RUT no encontrado o empresa inactiva");
+        Alert.alert("RUT Inválido", json?.error || "RUT no encontrado o respuesta no valida del servidor");
       }
     } catch (error) {
       console.error("Error validando RUT:", error);
@@ -133,7 +146,7 @@ export default function LoginScreen() {
 
     try {
       setLoading(true);
-      const API_URL = await getBackendUrl();
+      const API_URL = stripTrailingSlash(await getBackendUrl());
       console.log("🔐 [LOGIN] URL obtenida de config:", API_URL);
 
       const validarResponse = await fetch(`${API_URL}/api/validar-rut`, {
@@ -144,9 +157,9 @@ export default function LoginScreen() {
         },
         body: JSON.stringify({ rut }),
       });
-      const validarJson = await validarResponse.json();
-      if (!validarJson.success) {
-        Alert.alert("Error", validarJson.error || "RUT no válido");
+      const validarJson = await safeJsonFromResponse<{ success?: boolean; data?: any; error?: string }>(validarResponse);
+      if (!validarResponse.ok || !validarJson?.success) {
+        Alert.alert("Error", validarJson?.error || "RUT no válido o respuesta no valida del servidor");
         return;
       }
       const clienteConfig = validarJson.data;
@@ -169,7 +182,10 @@ export default function LoginScreen() {
           }),
         });
         console.log("🔐 [LOGIN] Respuesta recibida:", response.status);
-        json = await response.json();
+        json = await safeJsonFromResponse(response);
+        if (!json) {
+          throw new Error(`Respuesta vacia o invalida desde ${API_URL}/api/login`);
+        }
         console.log("🔐 [LOGIN] Conexión exitosa con:", API_URL);
       } catch (error: any) {
         console.log("❌ [LOGIN] Falló con:", API_URL, error.message);

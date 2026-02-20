@@ -3,8 +3,9 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Component, type ReactNode } from 'react';
-import { View, Text } from 'react-native';
+import { Component, type ReactNode, useEffect } from 'react';
+import { View, Text, AppState, type AppStateStatus } from 'react-native';
+import { markAppBackground, markAppActive } from '@/utils/config';
 
 // Error boundary simple sin dependencias
 class SimpleErrorBoundary extends Component<
@@ -42,12 +43,36 @@ class SimpleErrorBoundary extends Component<
   }
 }
 
+function AppStateManager() {
+  useEffect(() => {
+    // Marcar como activa al iniciar
+    markAppActive();
+
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // App va a background
+        markAppBackground();
+      } else if (nextAppState === 'active') {
+        // App vuelve a foreground
+        markAppActive();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  return null;
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
     <SimpleErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
+        <AppStateManager />
         <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="splash" />

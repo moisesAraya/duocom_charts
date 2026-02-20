@@ -193,11 +193,6 @@ export default function ProyeccionesScreen() {
         </>
       )}
 
-      {/* =========================
-          PROYECCIÓN VENTA MES (LÍNEAS)
-      ========================= */}
-      <ProyeccionVentaMes />
-
       {/* Year Picker Modal */}
       <Modal visible={showYearPicker} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setShowYearPicker(false)}>
@@ -263,119 +258,6 @@ export default function ProyeccionesScreen() {
         </Pressable>
       </Modal>
     </ScreenShell>
-  );
-}
-
-/* =========================
-   PROYECCIÓN VENTA MES COMPONENT
-========================= */
-function ProyeccionVentaMes() {
-  const { width } = useWindowDimensions();
-  const chartWidth = width - 48;
-  
-  const [ano, setAno] = useState(() => new Date().getFullYear());
-  const [mes, setMes] = useState(() => new Date().getMonth() + 1);
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const response = await api.get('/api/dashboard/analisis-ventas-mensual', {
-          params: { ano, mes },
-        });
-        
-        if (response.data.success) {
-          const allSeries = response.data.data?.series || [];
-          // Filtrar solo la serie de proyección (id -3)
-          const proyeccionSerie = allSeries.find((s: any) => s.idSucursal === -3);
-          if (proyeccionSerie) {
-            setData(proyeccionSerie.datos);
-          } else {
-            setData([]);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching proyeccion venta mes:', error);
-        setData([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [ano, mes]);
-
-  const chartData = useMemo(() => {
-    const labels = Array.from({ length: 31 }, (_, i) => String(i + 1));
-    if (!data.length) return { labels, datasets: [] };
-
-    return {
-      labels,
-      datasets: [{
-        data: labels.map((_, i) => {
-          const punto = data.find((d: any) => d.dia === i + 1);
-          return punto ? punto.monto : 0;
-        }),
-        color: (opacity = 1) => `rgba(139,92,246,${opacity})`,
-        strokeWidth: 3,
-        propsForDots: { r: '6', strokeWidth: '2', stroke: 'rgba(139,92,246,1)', fill: 'rgba(139,92,246,1)' },
-      }],
-    };
-  }, [data]);
-
-  return (
-    <>
-      <FilterRow title="Proyección venta mes">
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>Año</Text>
-            <View
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 8,
-                padding: 10,
-                backgroundColor: '#fff',
-              }}
-            >
-              <Text>{ano}</Text>
-            </View>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>Mes</Text>
-            <View
-              style={{
-                borderWidth: 1,
-                borderColor: '#ddd',
-                borderRadius: 8,
-                padding: 10,
-                backgroundColor: '#fff',
-              }}
-            >
-              <Text>{mes}</Text>
-            </View>
-          </View>
-        </View>
-      </FilterRow>
-
-      <ChartCard
-        title="Proyección venta mes (M$)"
-        data={chartData}
-        kind="line"
-        colorRgb="139,92,246"
-        width={chartWidth}
-        height={300}
-        xLabel="Días del mes"
-        yLabel="Ventas (M$)"
-        formatValue={(v) => `$${v}M`}
-        formatDetailValue={(v) => `$${v.toFixed(2)}M`}
-        formatAxisValue={(v) => `$${v}M`}
-        isLoading={loading}
-        isEmpty={!data.length}
-      />
-    </>
   );
 }
 

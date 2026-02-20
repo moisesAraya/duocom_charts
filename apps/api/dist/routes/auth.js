@@ -132,7 +132,13 @@ router.post('/login', apiKey_1.apiKeyMiddleware, async (req, res, next) => {
         // For now, accept any username/password and return the cliente config
         // TODO: Implement actual authentication against the client's database
         console.log(`🔍 [BACKEND] Login para usuario ${username} en BD: ${dbPath}`);
-        const token = jsonwebtoken_1.default.sign({ razonSocial: clienteConfig.razonSocial }, config_1.config.jwtSecret, {
+        const token = jsonwebtoken_1.default.sign({
+            razonSocial: clienteConfig.razonSocial,
+            rut: clienteConfig.rut,
+            ip: clienteConfig.ip,
+            puerto: clienteConfig.puerto,
+            bdAlias: clienteConfig.bdAlias
+        }, config_1.config.jwtSecret, {
             expiresIn: config_1.config.jwtExpiresIn,
         });
         res.json({

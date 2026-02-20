@@ -201,6 +201,147 @@ const parseLimit = (value: unknown, fallback: number): number => {
   return Math.min(Math.max(parsed, 50), 5000);
 };
 
+type CuentasPagarDoc = {
+  proveedor: string;
+  sucursal: string;
+  monto: number;
+  fechaVenc: Date | null;
+  fechaVencIso: string | null;
+  daysToDue: number;
+  diasVencido: number;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const parseUnknownDate = (value: unknown): Date | null => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const candidate = new Date(trimmed);
+    if (!Number.isNaN(candidate.getTime())) return candidate;
+  }
+  return null;
+};
+
+const toIsoDate = (value: Date | null): string | null =>
+  value ? value.toISOString().slice(0, 10) : null;
+
+const diffDays = (left: Date, right: Date): number => {
+  const leftUtc = Date.UTC(left.getFullYear(), left.getMonth(), left.getDate());
+  const rightUtc = Date.UTC(right.getFullYear(), right.getMonth(), right.getDate());
+  return Math.floor((leftUtc - rightUtc) / DAY_MS);
+};
+
+const getTipoDocumento = (row: NormalizedRow): string =>
+  (
+    toString(row.tipo_doc) ||
+    toString(row.tipo_documento) ||
+    toString(row.tipodoc) ||
+    toString(row.documento_tipo) ||
+    toString(row.tipo) ||
+    toString(row.t_doc) ||
+    toString(row.cod_doc)
+  ).toLowerCase();
+
+const getSignedDebt = (row: NormalizedRow): number => {
+  const rawAmount =
+    toNumber(row.saldo) ||
+    toNumber(row.total) ||
+    toNumber(row.importe) ||
+    toNumber(row.monto);
+  const tipoDocumento = getTipoDocumento(row);
+
+  if (
+    tipoDocumento.includes('nota credito') ||
+    tipoDocumento.includes('nota de credito') ||
+    /^nc\b/.test(tipoDocumento)
+  ) {
+    return -Math.abs(rawAmount);
+  }
+
+  if (
+    tipoDocumento.includes('factura') ||
+    tipoDocumento.includes('nota debito') ||
+    tipoDocumento.includes('nota de debito') ||
+    /^nd\b/.test(tipoDocumento)
+  ) {
+    return Math.abs(rawAmount);
+  }
+
+  return rawAmount;
+};
+
+const normalizeCuentasPagarDocs = (
+  rows: NormalizedRow[],
+  end: Date,
+  branches: string[]
+): CuentasPagarDoc[] =>
+  rows
+    .map(row => {
+      const sucursal = toString(row.sucursal) || toString(row.descripcion_sucursal);
+      if (branches.length && !branches.includes(sucursal)) return null;
+
+      const proveedor =
+        toString(row.nombres_razon_social) ||
+        toString(row.proveedor) ||
+        toString(row.razon_social) ||
+        toString(row.id_persona) ||
+        'Proveedor N/A';
+
+      const fechaVenc =
+        parseUnknownDate(row.fechavenc) ??
+        parseUnknownDate(row.fecha_venc) ??
+        parseUnknownDate(row.fecha_vencimiento) ??
+        parseUnknownDate(row.fecha_vcto) ??
+        parseUnknownDate(row.fecha_vence) ??
+        parseUnknownDate(row.f_venc) ??
+        null;
+
+      const diasTransc = toNumber(row.dias_transc);
+      const daysToDue = fechaVenc ? diffDays(fechaVenc, end) : -Math.max(0, diasTransc);
+      const diasVencido = Math.max(0, -daysToDue);
+
+      return {
+        proveedor,
+        sucursal,
+        monto: getSignedDebt(row),
+        fechaVenc,
+        fechaVencIso: toIsoDate(fechaVenc),
+        daysToDue,
+        diasVencido,
+      };
+    })
+    .filter((row): row is CuentasPagarDoc => Boolean(row));
+
+const startOfIsoWeek = (date: Date): Date => {
+  const start = new Date(date);
+  const day = (start.getDay() + 6) % 7;
+  start.setDate(start.getDate() - day);
+  start.setHours(0, 0, 0, 0);
+  return start;
+};
+
+const endOfIsoWeek = (date: Date): Date => {
+  const end = startOfIsoWeek(date);
+  end.setDate(end.getDate() + 6);
+  return end;
+};
+
+const getIsoWeekLabel = (date: Date): string => {
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNr = (target.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNr + 3);
+  const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+  const firstThursdayDayNr = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDayNr + 3);
+  const weekNumber = 1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * DAY_MS));
+  return `${target.getUTCFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
+};
+
+const getMonthLabel = (date: Date): string =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
 router.get('/sucursales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -593,6 +734,212 @@ router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
       .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
       .sort((a, b) => b.saldo - a.saldo)
       .slice(0, 20);
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/dashboard/cuentas-pagar/resumen-proveedor', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const { start, end } = getDateRange(req.query as Record<string, unknown>);
+    const limit = parseLimit(req.query.limit, 4000);
+    const branches = parseSucursalList(req.query.sucursal);
+    const rows = await runProcedure(dbConfig, '_PvtDocXPagar', [start, end], { limit });
+    const docs = normalizeCuentasPagarDocs(rows, end, branches);
+    const totals = new Map<
+      string,
+      {
+        proveedor: string;
+        deuda_total: number;
+        deuda_vencida: number;
+        deuda_por_vencer: number;
+        mayor_atraso_dias: number;
+      }
+    >();
+
+    for (const doc of docs) {
+      const current = totals.get(doc.proveedor) ?? {
+        proveedor: doc.proveedor,
+        deuda_total: 0,
+        deuda_vencida: 0,
+        deuda_por_vencer: 0,
+        mayor_atraso_dias: 0,
+      };
+      current.deuda_total += doc.monto;
+      if (doc.daysToDue < 0) {
+        current.deuda_vencida += doc.monto;
+        current.mayor_atraso_dias = Math.max(current.mayor_atraso_dias, doc.diasVencido);
+      } else {
+        current.deuda_por_vencer += doc.monto;
+      }
+      totals.set(doc.proveedor, current);
+    }
+
+    const data = Array.from(totals.values())
+      .filter(row => Math.abs(row.deuda_total) > 0.0001)
+      .sort(
+        (a, b) =>
+          b.mayor_atraso_dias - a.mayor_atraso_dias ||
+          b.deuda_vencida - a.deuda_vencida ||
+          b.deuda_total - a.deuda_total
+      );
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/dashboard/cuentas-pagar/flujo', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const { start, end } = getDateRange(req.query as Record<string, unknown>);
+    const limit = parseLimit(req.query.limit, 4000);
+    const branches = parseSucursalList(req.query.sucursal);
+    const rows = await runProcedure(dbConfig, '_PvtDocXPagar', [start, end], { limit });
+    const docs = normalizeCuentasPagarDocs(rows, end, branches);
+
+    type Bucket = {
+      proveedor: string;
+      periodo: string;
+      periodo_inicio: string;
+      periodo_fin: string;
+      monto_periodo: number;
+      deuda_vencida_periodo: number;
+      deuda_por_vencer_periodo: number;
+      acumulado: number;
+      mayor_atraso_dias: number;
+      dias_para_vencer_min: number;
+      __sortDate: Date;
+    };
+
+    const buildBuckets = (mode: 'semanal' | 'mensual'): Bucket[] => {
+      const grouped = new Map<string, Bucket>();
+
+      for (const doc of docs) {
+        const baseDate = doc.fechaVenc ?? end;
+        const periodStart = mode === 'semanal' ? startOfIsoWeek(baseDate) : new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
+        const periodEnd = mode === 'semanal' ? endOfIsoWeek(baseDate) : new Date(baseDate.getFullYear(), baseDate.getMonth() + 1, 0);
+        const periodLabel = mode === 'semanal' ? getIsoWeekLabel(baseDate) : getMonthLabel(baseDate);
+        const key = `${doc.proveedor}::${periodLabel}`;
+        const current = grouped.get(key) ?? {
+          proveedor: doc.proveedor,
+          periodo: periodLabel,
+          periodo_inicio: toIsoDate(periodStart) ?? '',
+          periodo_fin: toIsoDate(periodEnd) ?? '',
+          monto_periodo: 0,
+          deuda_vencida_periodo: 0,
+          deuda_por_vencer_periodo: 0,
+          acumulado: 0,
+          mayor_atraso_dias: 0,
+          dias_para_vencer_min: Number.POSITIVE_INFINITY,
+          __sortDate: periodStart,
+        };
+
+        current.monto_periodo += doc.monto;
+        if (doc.daysToDue < 0) {
+          current.deuda_vencida_periodo += doc.monto;
+          current.mayor_atraso_dias = Math.max(current.mayor_atraso_dias, doc.diasVencido);
+        } else {
+          current.deuda_por_vencer_periodo += doc.monto;
+        }
+        current.dias_para_vencer_min = Math.min(current.dias_para_vencer_min, doc.daysToDue);
+        grouped.set(key, current);
+      }
+
+      const byProvider = new Map<string, Bucket[]>();
+      for (const bucket of grouped.values()) {
+        const list = byProvider.get(bucket.proveedor) ?? [];
+        list.push(bucket);
+        byProvider.set(bucket.proveedor, list);
+      }
+
+      const accumulatedRows: Bucket[] = [];
+      for (const [proveedor, items] of byProvider.entries()) {
+        const ordered = items.sort((a, b) => a.__sortDate.getTime() - b.__sortDate.getTime());
+        let running = 0;
+        for (const item of ordered) {
+          running += item.monto_periodo;
+          accumulatedRows.push({
+            ...item,
+            proveedor,
+            acumulado: running,
+            dias_para_vencer_min:
+              item.dias_para_vencer_min === Number.POSITIVE_INFINITY ? 0 : item.dias_para_vencer_min,
+          });
+        }
+      }
+
+      return accumulatedRows.sort(
+        (a, b) =>
+          a.dias_para_vencer_min - b.dias_para_vencer_min ||
+          b.mayor_atraso_dias - a.mayor_atraso_dias ||
+          a.__sortDate.getTime() - b.__sortDate.getTime() ||
+          a.proveedor.localeCompare(b.proveedor)
+      );
+    };
+
+    const semanal = buildBuckets('semanal').map(({ __sortDate, ...row }) => row);
+    const mensual = buildBuckets('mensual').map(({ __sortDate, ...row }) => row);
+
+    res.json({
+      success: true,
+      data: {
+        semanal,
+        mensual,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/dashboard/cuentas-pagar/vencidos-proveedor', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const { start, end } = getDateRange(req.query as Record<string, unknown>);
+    const limit = parseLimit(req.query.limit, 4000);
+    const branches = parseSucursalList(req.query.sucursal);
+    const rows = await runProcedure(dbConfig, '_PvtDocXPagar', [start, end], { limit });
+    const docs = normalizeCuentasPagarDocs(rows, end, branches).filter(doc => doc.daysToDue < 0);
+    const grouped = new Map<
+      string,
+      {
+        proveedor: string;
+        deuda_vencida: number;
+        mayor_atraso_dias: number;
+        menor_fecha_venc: string | null;
+        mayor_fecha_venc: string | null;
+      }
+    >();
+
+    for (const doc of docs) {
+      const current = grouped.get(doc.proveedor) ?? {
+        proveedor: doc.proveedor,
+        deuda_vencida: 0,
+        mayor_atraso_dias: 0,
+        menor_fecha_venc: null,
+        mayor_fecha_venc: null,
+      };
+      current.deuda_vencida += doc.monto;
+      current.mayor_atraso_dias = Math.max(current.mayor_atraso_dias, doc.diasVencido);
+      if (doc.fechaVencIso) {
+        if (!current.menor_fecha_venc || doc.fechaVencIso < current.menor_fecha_venc) {
+          current.menor_fecha_venc = doc.fechaVencIso;
+        }
+        if (!current.mayor_fecha_venc || doc.fechaVencIso > current.mayor_fecha_venc) {
+          current.mayor_fecha_venc = doc.fechaVencIso;
+        }
+      }
+      grouped.set(doc.proveedor, current);
+    }
+
+    const data = Array.from(grouped.values())
+      .filter(row => row.deuda_vencida > 0)
+      .sort((a, b) => b.mayor_atraso_dias - a.mayor_atraso_dias || b.deuda_vencida - a.deuda_vencida);
 
     res.json({ success: true, data });
   } catch (error) {

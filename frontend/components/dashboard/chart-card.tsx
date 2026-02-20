@@ -11,6 +11,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-chart-kit";
+import { Text as SvgText } from "react-native-svg";
 import { makeChartConfig } from "./chart-config";
 import { useDashboardFilters } from "./filters-context";
 
@@ -578,6 +579,26 @@ export const ChartCard = ({
                     formatYLabel={formatYLabel}
                     fromZero
                     withShadow={false}
+                    renderDotContent={
+                      showValuesOnTop
+                        ? ({ x, y, index, indexData }) => {
+                            const v = Number(indexData);
+                            if (!Number.isFinite(v) || v === 0) return null;
+                            return (
+                              <SvgText
+                                key={`dot-${index}-${x}-${y}`}
+                                x={x}
+                                y={y - 8}
+                                fontSize="10"
+                                fill="#111"
+                                textAnchor="middle"
+                              >
+                                {formatValue ? formatValue(v) : v.toFixed(0)}
+                              </SvgText>
+                            );
+                          }
+                        : undefined
+                    }
                   />
                 ) : pieData.length > 0 ? (
                   <PieChart

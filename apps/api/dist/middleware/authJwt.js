@@ -1,6 +1,10 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authJwtMiddleware = void 0;
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const config_1 = require("../config");
 const firebird_1 = require("../db/firebird");
 const readField = (row, key) => {
@@ -40,17 +44,47 @@ const fetchUserRecord = async (rut) => {
     };
 };
 const authJwtMiddleware = async (req, res, next) => {
-    // MODO DESARROLLO: Aceptar cualquier token y usar la configuración del .env
-    const dbConfig = {
-        host: config_1.config.firebird.host,
-        port: config_1.config.firebird.port,
-        database: config_1.config.firebird.database,
-        user: config_1.config.firebird.user,
-        password: config_1.config.firebird.password,
-        client: config_1.config.firebird.client ?? undefined,
-    };
-    req.user = { rut: 0 };
-    req.dbConfig = dbConfig;
-    next();
+    try {
+        const authHeader = req.headers.authorization;
+        let dbConfig;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.substring(7);
+            try {
+                const decoded = jsonwebtoken_1.default.verify(token, config_1.config.jwtSecret);
+                // Si el token contiene información del cliente, usar la base de datos del cliente
+                if (decoded.rut && decoded.ip && decoded.bdAlias) {
+                    dbConfig = {
+                        host: decoded.ip,
+                        port: decoded.puerto || config_1.config.firebird.port,
+                        database: `C:\\DuoCOM\\BDatos\\${decoded.bdAlias}.Fdb`,
+                        user: config_1.config.firebird.user,
+                        password: config_1.config.firebird.password,
+                        client: config_1.config.firebird.client ?? undefined,
+                    };
+                    req.user = { rut: parseRutNumber(decoded.rut) || 0 };
+                    req.dbConfig = dbConfig;
+                    return next();
+                }
+            }
+            catch (jwtError) {
+                // Token inválido, continuar con base de datos principal
+            }
+        }
+        // Usar base de datos principal (DUOCOMAPPS.Fdb) para validaciones y cuando no hay token
+        dbConfig = {
+            host: config_1.config.firebird.host,
+            port: config_1.config.firebird.port,
+            database: config_1.config.firebird.database,
+            user: config_1.config.firebird.user,
+            password: config_1.config.firebird.password,
+            client: config_1.config.firebird.client ?? undefined,
+        };
+        req.user = { rut: 0 };
+        req.dbConfig = dbConfig;
+        next();
+    }
+    catch (error) {
+        next(error);
+    }
 };
 exports.authJwtMiddleware = authJwtMiddleware;

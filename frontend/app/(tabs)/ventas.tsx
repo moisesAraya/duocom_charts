@@ -138,6 +138,8 @@ export default function VentasScreen() {
   const [loadingVentasGrupo, setLoadingVentasGrupo] = useState(true);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [showVentasAnualesValues, setShowVentasAnualesValues] = useState(false);
+  const [showVentasSucursalValues, setShowVentasSucursalValues] = useState(false);
 
   /* =========================
      DERIVED PARAMS
@@ -319,12 +321,15 @@ export default function VentasScreen() {
       enabledVentasAnualesBranches.includes(b),
     );
 
-    const yearLabels = ventasAnualesYears.map((year) => String(year));
+    // Agregar un año anterior al primero para crear espacio
+    const firstYear = ventasAnualesYears[0];
+    const yearsWithPadding = firstYear ? [firstYear - 1, ...ventasAnualesYears] : ventasAnualesYears;
+    const yearLabels = yearsWithPadding.map((year) => String(year));
 
     return {
       labels: yearLabels,
       datasets: filteredBranches.map((branch, idx) => ({
-        data: ventasAnualesYears.map((year) =>
+        data: yearsWithPadding.map((year) =>
           ventasAnuales
             .filter(
               (row) =>
@@ -444,48 +449,62 @@ export default function VentasScreen() {
 
   return (
     <ScreenShell title="Ventas" refreshing={refreshing} onRefresh={loadAllData}>
-      {ventasAnualesBranches.length > 1 && (
-        <View style={styles.chipsWrap}>
-          {ventasAnualesBranches.map((branch, idx) => {
-            const enabled = enabledVentasAnualesBranches.includes(branch);
-            const rgb = getBranchColor(branch, idx);
-            return (
-              <Pressable
-                key={branch}
-                onPress={() => toggleVentasAnualesBranch(branch)}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
-                    borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    { color: enabled ? "#000" : "#999" },
-                  ]}
-                >
-                  {truncateLabel(branch, 12)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <ChartCard
           title="Ventas por año"
           headerContent={
-            ventasAnualesYears.length > 6 ? (
-              <View style={{ marginBottom: 8 }}>
-                <Text style={{ fontSize: 12, color: "#666", textAlign: "center" }}>
-                  Años disponibles: {ventasAnualesYears.join(" • ")}
-                </Text>
+            <View>
+              {ventasAnualesYears.length > 6 && (
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: "#666", textAlign: "center" }}>
+                    Años disponibles: {ventasAnualesYears.join(" • ")}
+                  </Text>
+                </View>
+              )}
+              {ventasAnualesBranches.length > 1 && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={{ fontSize: 12, color: "#666", marginBottom: 8, fontWeight: "600" }}>Filtrar por sucursal:</Text>
+                  <View style={styles.chipsWrap}>
+                    {ventasAnualesBranches.map((branch, idx) => {
+                      const enabled = enabledVentasAnualesBranches.includes(branch);
+                      const rgb = getBranchColor(branch, idx);
+                      return (
+                        <Pressable
+                          key={branch}
+                          onPress={() => toggleVentasAnualesBranch(branch)}
+                          style={[
+                            styles.chip,
+                            {
+                              backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
+                              borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              { color: enabled ? "#000" : "#999" },
+                            ]}
+                          >
+                            {truncateLabel(branch, 12)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+              <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
+                <Pressable
+                  style={styles.detailButton}
+                  onPress={() => setShowVentasAnualesValues(!showVentasAnualesValues)}
+                >
+                  <Text style={styles.detailButtonText}>
+                    {showVentasAnualesValues ? "Ocultar valores" : "Ver detalle"}
+                  </Text>
+                </Pressable>
               </View>
-            ) : null
+            </View>
           }
           data={ventasAnualesData}
           kind="line"
@@ -504,43 +523,61 @@ export default function VentasScreen() {
           isEmpty={!ventasAnuales.length || !enabledVentasAnualesBranches.length}
           detailLabels={ventasAnualesYears.map((year) => String(year))}
           detailTrigger="tap"
+          showValuesOnTop={showVentasAnualesValues}
+          hideHint={true}
         />
       </ScrollView>
-
-      {ventasAnualesBranches.length > 1 && (
-        <View style={styles.chipsWrap}>
-          {ventasAnualesBranches.map((branch, idx) => {
-            const enabled = enabledVentasSucursalBranches.includes(branch);
-            const rgb = getBranchColor(branch, idx);
-            return (
-              <Pressable
-                key={branch}
-                onPress={() => toggleVentasSucursalBranch(branch)}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
-                    borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    { color: enabled ? "#000" : "#999" },
-                  ]}
-                >
-                  {truncateLabel(branch, 12)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <ChartCard
           title="Ventas por sucursal"
+          headerContent={
+            <View>
+              {ventasAnualesBranches.length > 1 && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={{ fontSize: 12, color: "#666", marginBottom: 8, fontWeight: "600" }}>Filtrar por sucursal:</Text>
+                  <View style={styles.chipsWrap}>
+                    {ventasAnualesBranches.map((branch, idx) => {
+                      const enabled = enabledVentasSucursalBranches.includes(branch);
+                      const rgb = getBranchColor(branch, idx);
+                      return (
+                        <Pressable
+                          key={branch}
+                          onPress={() => toggleVentasSucursalBranch(branch)}
+                          style={[
+                            styles.chip,
+                            {
+                              backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
+                              borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              { color: enabled ? "#000" : "#999" },
+                            ]}
+                          >
+                            {truncateLabel(branch, 12)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+              <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
+                <Pressable
+                  style={styles.detailButton}
+                  onPress={() => setShowVentasSucursalValues(!showVentasSucursalValues)}
+                >
+                  <Text style={styles.detailButtonText}>
+                    {showVentasSucursalValues ? "Ocultar valores" : "Ver detalle"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          }
           data={ventasSucursalChart}
           kind="bar"
           colorRgb="59,130,246"
@@ -557,6 +594,8 @@ export default function VentasScreen() {
           isLoading={loadingVentasAnuales}
           isEmpty={!ventasSucursalRows.length}
           detailLabels={ventasSucursalLabels}
+          showValuesOnTop={showVentasSucursalValues}
+          hideHint={true}
         />
       </ScrollView>
 
@@ -1270,8 +1309,7 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
 
   const fsChartHeight = Math.max(320, fsH - 110);
 
-  // ✅ ZOOM REAL: más ancho => más separación entre puntos
-  const PX_PER_DAY_BASE = 42; // ajusta 38–60 según lo separado que lo quieras
+  const PX_PER_DAY_BASE = 42; 
   const fsMinWidthByDays = daysInMonth * PX_PER_DAY_BASE;
   const fsBaseChartWidth = Math.max(fsW - 32, fsMinWidthByDays);
   const fsZoomedChartWidth = Math.round(fsBaseChartWidth * zoom);
@@ -1461,13 +1499,14 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
                   withOuterLines={false}
                   fromZero
                   // ✅ Valores en cada punto (solo fullscreen), con 2 decimales en M
-                  renderDotContent={({ x, y, indexData }) => {
+                  renderDotContent={({ x, y, index, indexData }) => {
                     // Si hay MUCHAS series, puede saturar. Si quieres, lo limito a zoom>=1.5
                     const v = Number(indexData);
                     if (!Number.isFinite(v) || v === 0) return null;
 
                     return (
                       <SvgText
+                        key={`dot-label-${index}-${x}-${y}`}
                         x={x}
                         y={y - 8}
                         fontSize="10"
@@ -1579,8 +1618,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginBottom: 22,
-    paddingHorizontal: 8,
   },
   chip: {
     paddingHorizontal: 12,
@@ -1591,6 +1628,17 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chipText: { fontSize: 13, fontWeight: "600" },
+  detailButton: {
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  detailButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
 });
 
 const ui = StyleSheet.create({

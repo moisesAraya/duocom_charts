@@ -49,8 +49,9 @@
       "eas": {
         "projectId": "f5a69da6-4550-4977-a2d6-310614b4abc1"
       },
-      "apiUrl": "http://192.168.191.108:3000",
+      "apiUrl": "https://duocom.dyndns.org/charts",
       "apiKey": ""
     }
   }
 }
+

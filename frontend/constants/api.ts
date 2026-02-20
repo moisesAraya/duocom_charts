@@ -12,8 +12,8 @@ const isDevelopment = (() => {
   }
 })();
 
-const fallbackDevUrl = 'http://192.168.191.108:3000';
-const fallbackProdUrl = 'http://192.168.191.108:3000';
+const fallbackDevUrl = 'https://duocom.dyndns.org/charts';
+const fallbackProdUrl = 'https://duocom.dyndns.org/charts';
 
 const baseUrl =
   process.env.EXPO_PUBLIC_API_URL ?? 
@@ -108,3 +108,4 @@ export const api = {
   
   defaults: axiosInstance.defaults,
 };
+
