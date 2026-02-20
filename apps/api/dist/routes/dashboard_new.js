@@ -367,10 +367,9 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
             return;
         }
         const dbConfig = getDbConfig(req);
+        const { end } = getDateRange(req.query);
         const limit = parseLimit(req.query.limit, 1500);
-        const sql = `SELECT FIRST ${limit} * FROM "eStockSucursal"`;
-        const rawRows = await (0, firebird_1.query)(sql, [], dbConfig);
-        const rows = rawRows.map(normalizeRow);
+        const rows = await runProcedure(dbConfig, '_PvtStock', [end], { limit });
         const branches = parseSucursalList(req.query.sucursal);
         const data = rows
             .map(row => {
@@ -381,11 +380,23 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
                 'N/A';
             return {
                 producto: toString(row.descripcion_art_serv) ||
+                    toString(row.descripcion_articulo) ||
+                    toString(row.desc_articulo) ||
+                    toString(row.nombre_articulo) ||
+                    toString(row.nom_articulo) ||
+                    toString(row.descripcion) ||
+                    toString(row.nombre) ||
+                    toString(row.glosa) ||
+                    toString(row.detalle) ||
                     toString(row.producto) ||
                     toString(row.articulo) ||
-                    toString(row.nombre_articulo) ||
                     toString(row.codigo_articulo) ||
-                    'Producto N/A',
+                    toString(row.cod_articulo) ||
+                    toString(row.id_art_serv) ||
+                    toString(row.id_articulo) ||
+                    toString(row.codigo) ||
+                    toString(row.sku) ||
+                    'Sin nombre',
                 sucursal,
                 stock: toNumber(row.stock_actual) ||
                     toNumber(row.stock) ||
