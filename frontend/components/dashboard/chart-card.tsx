@@ -262,20 +262,31 @@ export const ChartCard = ({
   const handleBarTap = (x: number, y: number, contentWidth: number) => {
     if (!safeData.labels.length) return;
 
-    const segmentWidth = contentWidth / safeData.labels.length;
+    // The chart library leaves horizontal/vertical paddings in the plot area.
+    // If we don't account for that, taps can map to the wrong bar.
+    const plotPaddingX = Math.max(12, Math.min(32, contentWidth * 0.06));
+    const plotLeft = plotPaddingX;
+    const plotRight = contentWidth - plotPaddingX;
+    const plotWidth = plotRight - plotLeft;
+    if (plotWidth <= 0) return;
+
+    if (x < plotLeft || x > plotRight) return;
+
+    const segmentWidth = plotWidth / safeData.labels.length;
     if (!Number.isFinite(segmentWidth) || segmentWidth <= 0) return;
 
+    const xInPlot = x - plotLeft;
     const index = Math.min(
       safeData.labels.length - 1,
-      Math.max(0, Math.floor(x / segmentWidth)),
+      Math.max(0, Math.floor(xInPlot / segmentWidth)),
     );
 
     const maxValue = getMaxValue(safeData);
     if (maxValue <= 0) return;
 
     const datasetCount = Math.max(1, safeData.datasets.length);
-    const barGroupWidth = segmentWidth * barTapPaddingRatio;
-    const barGroupLeft = index * segmentWidth + (segmentWidth - barGroupWidth) / 2;
+    const barGroupWidth = segmentWidth * barTapPaddingRatio * 0.9;
+    const barGroupLeft = plotLeft + index * segmentWidth + (segmentWidth - barGroupWidth) / 2;
     const barGroupRight = barGroupLeft + barGroupWidth;
 
     if (x < barGroupLeft || x > barGroupRight) return;
@@ -287,9 +298,10 @@ export const ChartCard = ({
     const valueAtIndex = safeData.datasets[datasetIndex]?.data[index] ?? 0;
     if (valueAtIndex <= 0) return;
 
-    const topPadding = 16;
-    const bottomPadding = 28;
+    const topPadding = 18;
+    const bottomPadding = 34;
     const chartAreaHeight = height - topPadding - bottomPadding;
+    if (chartAreaHeight <= 0) return;
 
     const barHeight = (valueAtIndex / maxValue) * chartAreaHeight;
     if (barHeight < barTapMinHeight) return;
@@ -297,11 +309,13 @@ export const ChartCard = ({
     const barTop = topPadding + (chartAreaHeight - barHeight);
     const barBottom = topPadding + chartAreaHeight;
 
-    const barLeft = barGroupLeft + datasetIndex * barSlotWidth;
-    const barRight = barLeft + barSlotWidth;
+    const barCenter = barGroupLeft + datasetIndex * barSlotWidth + barSlotWidth / 2;
+    const touchBarWidth = barSlotWidth * 0.78;
+    const barLeft = barCenter - touchBarWidth / 2;
+    const barRight = barCenter + touchBarWidth / 2;
 
     if (x < barLeft || x > barRight) return;
-    if (y < barTop || y > barBottom) return;
+    if (y < barTop || y > barBottom + 2) return;
 
     const detailPayload = buildDetail(index, datasetIndex);
     setDetail(detailPayload);
@@ -472,7 +486,7 @@ export const ChartCard = ({
                 >
                   {kind === "bar" ? (
                     <Pressable
-                      onPressIn={(e) =>
+                      onPress={(e) =>
                         handleBarTap(
                           e.nativeEvent.locationX,
                           e.nativeEvent.locationY,
@@ -535,7 +549,7 @@ export const ChartCard = ({
               <View style={{ flex: 1 }}>
                 {kind === "bar" ? (
                   <Pressable
-                    onPressIn={(e) =>
+                    onPress={(e) =>
                       handleBarTap(
                         e.nativeEvent.locationX,
                         e.nativeEvent.locationY,
