@@ -88,6 +88,7 @@ function DataGridCard<T>({
   rows,
   columns,
   emptyMessage,
+  initialLimit = 8,
 }: {
   title: string;
   subtitle?: string;
@@ -95,7 +96,12 @@ function DataGridCard<T>({
   rows: T[];
   columns: GridColumn<T>[];
   emptyMessage: string;
+  initialLimit?: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleRows = expanded ? rows : rows.slice(0, initialLimit);
+  const hiddenCount = Math.max(0, rows.length - initialLimit);
+
   return (
     <View style={grid.card}>
       <Text style={grid.title}>{title}</Text>
@@ -123,7 +129,7 @@ function DataGridCard<T>({
                 </Text>
               ))}
             </View>
-            {rows.map((row, rowIndex) => (
+            {visibleRows.map((row, rowIndex) => (
               <View key={`${title}-${rowIndex}`} style={grid.dataRow}>
                 {columns.map((column) => (
                   <Text
@@ -145,6 +151,14 @@ function DataGridCard<T>({
       ) : (
         <Text style={grid.emptyText}>{emptyMessage}</Text>
       )}
+
+      {!loading && hiddenCount > 0 ? (
+        <Pressable style={grid.toggleButton} onPress={() => setExpanded((prev) => !prev)}>
+          <Text style={grid.toggleButtonText}>
+            {expanded ? 'Ver menos' : `Ver ${hiddenCount} filas más`}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -439,6 +453,7 @@ export default function FinanzasScreen() {
           rows={resumenProveedores}
           columns={resumenColumns}
           emptyMessage="Sin datos de resumen por proveedor."
+          initialLimit={10}
         />
 
         <DataGridCard
@@ -448,6 +463,7 @@ export default function FinanzasScreen() {
           rows={flujoSemanal}
           columns={flujoColumns}
           emptyMessage="Sin datos de flujo semanal."
+          initialLimit={8}
         />
 
         <DataGridCard
@@ -457,6 +473,7 @@ export default function FinanzasScreen() {
           rows={flujoMensual}
           columns={flujoColumns}
           emptyMessage="Sin datos de flujo mensual."
+          initialLimit={8}
         />
 
         <DataGridCard
@@ -466,6 +483,7 @@ export default function FinanzasScreen() {
           rows={proveedoresVencidos}
           columns={vencidosColumns}
           emptyMessage="No hay proveedores vencidos para el periodo seleccionado."
+          initialLimit={10}
         />
 
         <Modal visible={showYearPicker} transparent animationType="fade">
@@ -566,8 +584,8 @@ const grid = StyleSheet.create({
   },
   headerCell: {
     paddingHorizontal: 10,
-    paddingVertical: 10,
-    fontSize: 12,
+    paddingVertical: 8,
+    fontSize: 11,
     fontWeight: '700',
     color: '#334155',
   },
@@ -578,8 +596,8 @@ const grid = StyleSheet.create({
   },
   dataCell: {
     paddingHorizontal: 10,
-    paddingVertical: 9,
-    fontSize: 12,
+    paddingVertical: 7,
+    fontSize: 11,
     color: '#0F172A',
   },
   right: {
@@ -601,6 +619,21 @@ const grid = StyleSheet.create({
     paddingVertical: 12,
     color: '#6B7280',
     fontSize: 13,
+  },
+  toggleButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  toggleButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1D4ED8',
   },
 });
 

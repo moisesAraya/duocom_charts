@@ -36,6 +36,16 @@ interface ConsumoRow {
 const truncateLabel = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max)}...` : value;
 
+const compactProductLabel = (value: string): string => {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (clean.length <= 14) return clean;
+  const words = clean.split(' ').filter(Boolean);
+  if (words.length >= 2) {
+    return truncateLabel(`${words[0]} ${words[1]}`, 14);
+  }
+  return truncateLabel(clean, 14);
+};
+
 export default function AlertasScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(280, width - 40);
@@ -105,37 +115,37 @@ export default function AlertasScreen() {
   }, []);
 
   const quiebreLabels = useMemo(
-    () => quiebre.slice(0, 10).map(item => item.producto),
+    () => quiebre.slice(0, 8).map(item => item.producto),
     [quiebre]
   );
   const quiebreChart = useMemo(
     () => ({
-      labels: sparsifyLabels(quiebreLabels.map(label => truncateLabel(label, 8)), 6),
-      datasets: [{ data: quiebre.slice(0, 10).map(item => item.stock ?? 0) }],
+      labels: sparsifyLabels(quiebreLabels.map(label => compactProductLabel(label)), 5),
+      datasets: [{ data: quiebre.slice(0, 8).map(item => item.stock ?? 0) }],
     }),
     [quiebre, quiebreLabels]
   );
 
   const reposicionLabels = useMemo(
-    () => reposicion.slice(0, 10).map(item => item.producto),
+    () => reposicion.slice(0, 8).map(item => item.producto),
     [reposicion]
   );
   const reposicionChart = useMemo(
     () => ({
-      labels: sparsifyLabels(reposicionLabels.map(label => truncateLabel(label, 8)), 6),
-      datasets: [{ data: reposicion.slice(0, 10).map(item => item.stock_reposicion ?? 0) }],
+      labels: sparsifyLabels(reposicionLabels.map(label => compactProductLabel(label)), 5),
+      datasets: [{ data: reposicion.slice(0, 8).map(item => item.stock_reposicion ?? 0) }],
     }),
     [reposicion, reposicionLabels]
   );
 
   const consumoLabels = useMemo(
-    () => consumo.slice(0, 10).map(item => item.producto),
+    () => consumo.slice(0, 8).map(item => item.producto),
     [consumo]
   );
   const consumoChart = useMemo(
     () => ({
-      labels: sparsifyLabels(consumoLabels.map(label => truncateLabel(label, 8)), 6),
-      datasets: [{ data: consumo.slice(0, 10).map(item => item.consumo ?? 0) }],
+      labels: sparsifyLabels(consumoLabels.map(label => compactProductLabel(label)), 5),
+      datasets: [{ data: consumo.slice(0, 8).map(item => item.consumo ?? 0) }],
     }),
     [consumo, consumoLabels]
   );
@@ -172,7 +182,7 @@ export default function AlertasScreen() {
             formatDetailValue={formatNumberExact}
             formatAxisValue={formatCompact}
             scrollable
-            minWidth={Math.max(chartWidth, quiebreChart.labels.length * 44)}
+            minWidth={Math.max(chartWidth, quiebreChart.labels.length * 68)}
             enterDelay={60}
             isEmpty={!quiebre.length}
             emptyMessage="Sin quiebres de stock."
@@ -193,7 +203,7 @@ export default function AlertasScreen() {
             formatDetailValue={formatNumberExact}
             formatAxisValue={formatCompact}
             scrollable
-            minWidth={Math.max(chartWidth, reposicionChart.labels.length * 44)}
+            minWidth={Math.max(chartWidth, reposicionChart.labels.length * 68)}
             enterDelay={120}
             isEmpty={!reposicion.length}
             emptyMessage="Sin datos de reposicion."
@@ -214,7 +224,7 @@ export default function AlertasScreen() {
             formatDetailValue={formatNumberExact}
             formatAxisValue={formatCompact}
             scrollable
-            minWidth={Math.max(chartWidth, consumoChart.labels.length * 44)}
+            minWidth={Math.max(chartWidth, consumoChart.labels.length * 68)}
             enterDelay={180}
             isEmpty={!consumo.length}
             emptyMessage="Sin datos de consumo."

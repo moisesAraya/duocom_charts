@@ -29,6 +29,16 @@ interface RentabilidadRow {
 const truncateLabel = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max)}...` : value;
 
+const compactProductLabel = (value: string): string => {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (clean.length <= 14) return clean;
+  const words = clean.split(' ').filter(Boolean);
+  if (words.length >= 2) {
+    return truncateLabel(`${words[0]} ${words[1]}`, 14);
+  }
+  return truncateLabel(clean, 14);
+};
+
 export default function InventarioScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(280, width - 40);
@@ -96,37 +106,37 @@ export default function InventarioScreen() {
   }, []);
 
   const inventarioLabels = useMemo(
-    () => (inventario || []).slice(0, 10).map(item => item.producto),
+    () => (inventario || []).slice(0, 8).map(item => item.producto),
     [inventario]
   );
   const inventarioChart = useMemo(
     () => ({
-      labels: sparsifyLabels(inventarioLabels.map(label => truncateLabel(label, 10)), 6),
-      datasets: [{ data: (inventario || []).slice(0, 10).map(item => item.total_venta ?? 0) }],
+      labels: sparsifyLabels(inventarioLabels.map(label => compactProductLabel(label)), 5),
+      datasets: [{ data: (inventario || []).slice(0, 8).map(item => item.total_venta ?? 0) }],
     }),
     [inventario, inventarioLabels]
   );
 
   const rotacionLabels = useMemo(
-    () => (rotacion || []).slice(0, 10).map(item => item.producto),
+    () => (rotacion || []).slice(0, 8).map(item => item.producto),
     [rotacion]
   );
   const rotacionChart = useMemo(
     () => ({
-      labels: sparsifyLabels(rotacionLabels.map(label => truncateLabel(label, 10)), 6),
-      datasets: [{ data: (rotacion || []).slice(0, 10).map(item => item.rotacion ?? 0) }],
+      labels: sparsifyLabels(rotacionLabels.map(label => compactProductLabel(label)), 5),
+      datasets: [{ data: (rotacion || []).slice(0, 8).map(item => item.rotacion ?? 0) }],
     }),
     [rotacion, rotacionLabels]
   );
 
   const rentabilidadLabels = useMemo(
-    () => (rentabilidad || []).slice(0, 10).map(item => item.producto),
+    () => (rentabilidad || []).slice(0, 8).map(item => item.producto),
     [rentabilidad]
   );
   const rentabilidadChart = useMemo(
     () => ({
-      labels: sparsifyLabels(rentabilidadLabels.map(label => truncateLabel(label, 10)), 6),
-      datasets: [{ data: (rentabilidad || []).slice(0, 10).map(item => item.rentabilidad ?? 0) }],
+      labels: sparsifyLabels(rentabilidadLabels.map(label => compactProductLabel(label)), 5),
+      datasets: [{ data: (rentabilidad || []).slice(0, 8).map(item => item.rentabilidad ?? 0) }],
     }),
     [rentabilidad, rentabilidadLabels]
   );
@@ -158,7 +168,7 @@ export default function InventarioScreen() {
           formatDetailValue={formatCurrency}
           formatAxisValue={formatCompact}
           scrollable
-          minWidth={Math.max(chartWidth, inventarioChart.labels.length * 44)}
+          minWidth={Math.max(chartWidth, inventarioChart.labels.length * 68)}
           enterDelay={60}
           isLoading={loadingInventario}
           isEmpty={!inventario.length}
@@ -180,7 +190,7 @@ export default function InventarioScreen() {
           formatDetailValue={formatNumberExact}
           formatAxisValue={formatCompact}
           scrollable
-          minWidth={Math.max(chartWidth, rotacionChart.labels.length * 44)}
+          minWidth={Math.max(chartWidth, rotacionChart.labels.length * 68)}
           enterDelay={120}
           isLoading={loadingRotacion}
           isEmpty={!rotacion.length}
@@ -202,7 +212,7 @@ export default function InventarioScreen() {
           formatDetailValue={formatCurrency}
           formatAxisValue={formatCompact}
           scrollable
-          minWidth={Math.max(chartWidth, rentabilidadChart.labels.length * 44)}
+          minWidth={Math.max(chartWidth, rentabilidadChart.labels.length * 68)}
           enterDelay={180}
           isLoading={loadingRentabilidad}
           isEmpty={!rentabilidad.length}

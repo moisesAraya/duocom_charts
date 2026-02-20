@@ -440,21 +440,53 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
     }
 
     const dbConfig = getDbConfig(req);
-    const { end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 1500);
-    const rows = await runProcedure(dbConfig, '_PvtStock', [end], { limit });
+    const sql = `SELECT FIRST ${limit} * FROM "eStockSucursal"`;
+    const rawRows = await query<Record<string, unknown>>(sql, [], dbConfig);
+    const rows = rawRows.map(normalizeRow);
     const branches = parseSucursalList(req.query.sucursal);
     const data = rows
-      .filter(row =>
-        branches.length ? branches.includes(toString(row.bodega_local)) : true
-      )
+      .map(row => {
+        const sucursal =
+          toString(row.sucursal) ||
+          toString(row.bodega_local) ||
+          toString(row.descripcion_sucursal) ||
+          toString(row.nombre_sucursal) ||
+          'N/A';
+        return {
+          producto:
+            toString(row.descripcion_art_serv) ||
+            toString(row.producto) ||
+            toString(row.articulo) ||
+            toString(row.nombre_articulo) ||
+            toString(row.codigo_articulo) ||
+            'Producto N/A',
+          sucursal,
+          stock:
+            toNumber(row.stock_actual) ||
+            toNumber(row.stock) ||
+            toNumber(row.existencia),
+          total_venta:
+            toNumber(row.total_p_venta) ||
+            toNumber(row.total_venta) ||
+            toNumber(row.valor_stock) ||
+            toNumber(row.costo_total),
+          stock_min:
+            toNumber(row.stock_min) ||
+            toNumber(row.stock_minimo),
+          stock_max:
+            toNumber(row.stock_max) ||
+            toNumber(row.stock_maximo),
+        };
+      })
+      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
       .map(row => ({
-        producto: toString(row.descripcion_art_serv),
-        sucursal: toString(row.bodega_local),
-        stock: toNumber(row.stock_actual),
-        total_venta: toNumber(row.total_p_venta),
-        stock_min: toNumber(row.stock_min),
-        stock_max: toNumber(row.stock_max),
+        producto: row.producto,
+        sucursal: row.sucursal,
+        stock: row.stock,
+        total_venta: row.total_venta,
+        stock_min: row.stock_min,
+        stock_max: row.stock_max,
       }))
       .sort((a, b) => b.total_venta - a.total_venta)
       .slice(0, 20);
