@@ -6,7 +6,7 @@ export const makeChartConfig = (
   backgroundColor: '#ffffff',
   backgroundGradientFrom: '#ffffff',
   backgroundGradientTo: '#ffffff',
-  // Stronger fill for area under line
+  // Relleno más fuerte para el área bajo la línea
   fillShadowGradientFrom: `rgba(${rgb}, 0.65)`,
   fillShadowGradientTo: `rgba(${rgb}, 0.18)`,
   fillShadowGradientOpacity: 1,

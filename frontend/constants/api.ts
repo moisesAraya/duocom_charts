@@ -10,7 +10,7 @@
  *  3. Fallback a https://duocom.dyndns.org/charts
  *
  * Exports principales:
- *  - API_CONFIG: { BASE_URL, API_KEY, DEMO_MODE }
+ *  - API_CONFIG: { BASE_URL, API_KEY }
  *  - api: wrapper de Axios con soporte de modo demo
  *  - setAuthToken(): guarda el JWT para futuras peticiones
  *  - getApiKeyHeader(): devuelve el header x-api-key
@@ -18,7 +18,6 @@
 
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import Constants from 'expo-constants';
-import { DEMO_MODE, getMockResponse } from './mock-data';
 
 // Detectar si estamos en desarrollo de forma segura
 // En producción, __DEV__ podría no existir, así que asumimos false por defecto
@@ -44,7 +43,6 @@ const apiKey =
 export const API_CONFIG = {
   BASE_URL: baseUrl,
   API_KEY: apiKey,
-  DEMO_MODE,
 };
 
 const axiosInstance = axios.create({
@@ -66,64 +64,20 @@ export const setAuthToken = (token: string | null) => {
 export const getApiKeyHeader = (): Record<string, string> =>
   apiKey ? { 'x-api-key': apiKey } : {};
 
-// Wrapper para api que maneja modo demo
+/** Cliente HTTP — delega directamente a la instancia de Axios configurada. */
 export const api = {
-  get: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    if (DEMO_MODE) {
-      const mockData = getMockResponse(url);
-      return Promise.resolve({
-        data: mockData as T,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: config || {} as any,
-      } as AxiosResponse<T>);
-    }
-    return axiosInstance.get<T>(url, config);
-  },
-  
-  post: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    if (DEMO_MODE) {
-      const mockData = getMockResponse(url);
-      return Promise.resolve({
-        data: mockData as T,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: config || {} as any,
-      } as AxiosResponse<T>);
-    }
-    return axiosInstance.post<T>(url, data, config);
-  },
-  
-  put: async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    if (DEMO_MODE) {
-      const mockData = getMockResponse(url);
-      return Promise.resolve({
-        data: mockData as T,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: config || {} as any,
-      } as AxiosResponse<T>);
-    }
-    return axiosInstance.put<T>(url, data, config);
-  },
-  
-  delete: async <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    if (DEMO_MODE) {
-      const mockData = getMockResponse(url);
-      return Promise.resolve({
-        data: mockData as T,
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        config: config || {} as any,
-      } as AxiosResponse<T>);
-    }
-    return axiosInstance.delete<T>(url, config);
-  },
-  
+  get: <T = any>(url: string, config?: AxiosRequestConfig) =>
+    axiosInstance.get<T>(url, config),
+
+  post: <T = any>(url: string, data?: any, config?: AxiosRequestConfig) =>
+    axiosInstance.post<T>(url, data, config),
+
+  put: <T = any>(url: string, data?: any, config?: AxiosRequestConfig) =>
+    axiosInstance.put<T>(url, data, config),
+
+  delete: <T = any>(url: string, config?: AxiosRequestConfig) =>
+    axiosInstance.delete<T>(url, config),
+
   defaults: axiosInstance.defaults,
 };
 

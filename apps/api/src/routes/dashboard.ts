@@ -1,10 +1,10 @@
 /**
- * dashboard.ts — Main dashboard API router.
+ * dashboard.ts — Router principal del dashboard.
  *
- * Exposes ~20 endpoints that power the Duocom mobile dashboard,
- * covering sales, inventory, finance (accounts payable / receivable),
- * and projection data.  Every endpoint reads from Firebird stored
- * procedures through the shared helpers in ../helpers/db-helpers.
+ * Expone ~20 endpoints que alimentan el dashboard móvil de Duocom,
+ * cubriendo ventas, inventario, finanzas (cuentas por pagar / cobrar)
+ * y datos de proyección. Cada endpoint lee de procedimientos almacenados
+ * de Firebird a través de los helpers compartidos en ../helpers/db-helpers.
  */
 
 import { Router, type Request } from 'express';
@@ -34,7 +34,7 @@ import {
 const router = Router();
 
 /* ═══════════════════════════════════════════
-   Local types & helpers (specific to dashboard)
+   Tipos y helpers locales (específicos del dashboard)
 ═══════════════════════════════════════════ */
 
 type CuentasPagarDoc = {
@@ -179,10 +179,10 @@ const getMonthLabel = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
 /* ═══════════════════════════════════════════
-   Routes
+   Rutas
 ═══════════════════════════════════════════ */
 
-// List all branches (sucursales) available in the database
+// Listar todas las sucursales disponibles en la base de datos
 router.get('/sucursales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -205,7 +205,7 @@ router.get('/sucursales', async (req, res, next) => {
   }
 });
 
-// Hourly customer traffic per branch
+// Tráfico de clientes por hora y sucursal
 router.get('/dashboard/clientes-hora', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -244,7 +244,7 @@ router.get('/dashboard/clientes-hora', async (req, res, next) => {
   }
 });
 
-// Sales breakdown by payment method
+// Desglose de ventas por medio de pago
 router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -276,7 +276,7 @@ router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
   }
 });
 
-// Sales grouped by product group / category
+// Ventas agrupadas por grupo de producto / categoría
 router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -318,7 +318,7 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
   }
 });
 
-// Annual sales totals per branch (multi-year)
+// Totales de ventas anuales por sucursal (multi-año)
 router.get('/dashboard/ventas-anuales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -354,7 +354,7 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
   }
 });
 
-// Daily sales summary within a date range (monthly view)
+// Resumen diario de ventas en un rango de fechas (vista mensual)
 router.get('/dashboard/resumen-mensual-ventas', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -386,7 +386,7 @@ router.get('/dashboard/resumen-mensual-ventas', async (req, res, next) => {
   }
 });
 
-// Monthly totals for a specific year (annual overview)
+// Totales mensuales para un año específico (vista anual)
 router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -421,7 +421,7 @@ router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
   }
 });
 
-// Per-transaction sales feed (minute-level detail)
+// Detalle de ventas por transacción (nivel minuto)
 router.get('/dashboard/venta-minuto', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -444,7 +444,7 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
   }
 });
 
-// Valued inventory (top 20 products by stock value)
+// Inventario valorizado (top 20 productos por valor de stock)
 router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -516,7 +516,7 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
   }
 });
 
-// Product rotation / turnover ranking (top 20)
+// Ranking de rotación de productos (top 20)
 router.get('/dashboard/productos-rotacion', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -545,7 +545,7 @@ router.get('/dashboard/productos-rotacion', async (req, res, next) => {
   }
 });
 
-// Product profitability ranking (top 20 by contribution)
+// Ranking de rentabilidad de productos (top 20 por contribución)
 router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -574,7 +574,7 @@ router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
   }
 });
 
-// Accounts receivable (top 20 by outstanding balance)
+// Cuentas por cobrar (top 20 por saldo pendiente)
 router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -609,7 +609,7 @@ router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
   }
 });
 
-// Accounts payable (top 20 by outstanding balance)
+// Cuentas por pagar (top 20 por saldo pendiente)
 router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -635,7 +635,7 @@ router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
   }
 });
 
-// Accounts payable summary grouped by supplier
+// Resumen de cuentas por pagar agrupado por proveedor
 router.get('/dashboard/cuentas-pagar/resumen-proveedor', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -688,7 +688,7 @@ router.get('/dashboard/cuentas-pagar/resumen-proveedor', async (req, res, next) 
   }
 });
 
-// Accounts payable cash-flow forecast (weekly + monthly buckets)
+// Proyección de flujo de caja de cuentas por pagar (semanal + mensual)
 router.get('/dashboard/cuentas-pagar/flujo', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -793,7 +793,7 @@ router.get('/dashboard/cuentas-pagar/flujo', async (req, res, next) => {
   }
 });
 
-// Overdue payables grouped by supplier
+// Deudas vencidas agrupadas por proveedor
 router.get('/dashboard/cuentas-pagar/vencidos-proveedor', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -844,7 +844,7 @@ router.get('/dashboard/cuentas-pagar/vencidos-proveedor', async (req, res, next)
   }
 });
 
-// Delinquent customers (>30 days overdue with positive balance)
+// Clientes morosos (>30 días de atraso con saldo positivo)
 router.get('/dashboard/clientes-morosos', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -879,7 +879,7 @@ router.get('/dashboard/clientes-morosos', async (req, res, next) => {
   }
 });
 
-// Month-to-date sales projection (daily actual vs. projected)
+// Proyección de ventas del mes (ventas reales vs. proyectadas por día)
 router.get('/dashboard/proyeccion-ventas-mes', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -924,7 +924,7 @@ router.get('/dashboard/proyeccion-ventas-mes', async (req, res, next) => {
   }
 });
 
-// Estimated VAT (IVA) projection for the current month
+// Proyección estimada de IVA para el mes actual
 router.get('/dashboard/proyeccion-iva', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -965,7 +965,7 @@ router.get('/dashboard/proyeccion-iva', async (req, res, next) => {
   }
 });
 
-// Recent sales event log (last 50 transactions)
+// Registro de eventos de venta recientes (últimas 50 transacciones)
 router.get('/dashboard/registro-eventos', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -990,7 +990,7 @@ router.get('/dashboard/registro-eventos', async (req, res, next) => {
   }
 });
 
-// Raw-material consumption ranking (top 20)
+// Ranking de consumo de materias primas (top 20)
 router.get('/dashboard/consumo-materias-primas', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1019,7 +1019,7 @@ router.get('/dashboard/consumo-materias-primas', async (req, res, next) => {
   }
 });
 
-// Products below minimum stock level (stock-out risk)
+// Productos bajo el nivel mínimo de stock (riesgo de quiebre)
 router.get('/dashboard/productos-quiebre-stock', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1045,7 +1045,7 @@ router.get('/dashboard/productos-quiebre-stock', async (req, res, next) => {
   }
 });
 
-// Products needing replenishment (reposition quantities)
+// Productos que necesitan reposición (cantidades a reponer)
 router.get('/dashboard/tiempo-reposicion', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1070,7 +1070,7 @@ router.get('/dashboard/tiempo-reposicion', async (req, res, next) => {
   }
 });
 
-// Monthly sales analysis by branch (Graf_VtaMes_Suc stored procedure)
+// Análisis mensual de ventas por sucursal (procedimiento Graf_VtaMes_Suc)
 router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1131,7 +1131,7 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
       };
     });
 
-    console.log(`[dashboard] analisis-ventas-mensual: ${series.length} series found`);
+    console.log(`[dashboard] analisis-ventas-mensual: ${series.length} series encontradas`);
 
     res.json({
       success: true,
@@ -1147,7 +1147,7 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
   }
 });
 
-// Alternative endpoint for frontend compatibility (raw Graf_VtaMes_Suc rows)
+// Endpoint alternativo para compatibilidad con el frontend (filas crudas de Graf_VtaMes_Suc)
 router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1159,9 +1159,9 @@ router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
     const sql = 'SELECT * FROM "Graf_VtaMes_Suc"(?, ?)';
     const rows = await query<Record<string, unknown>>(sql, [ano, mes], dbConfig);
 
-    console.log(`[dashboard] graf-vta-mes-suc: retrieved ${rows.length} rows`);
+    console.log(`[dashboard] graf-vta-mes-suc: ${rows.length} filas obtenidas`);
     if (rows.length > 0) {
-      console.log('[dashboard] graf-vta-mes-suc sample row:', JSON.stringify(rows[0], null, 2));
+      console.log('[dashboard] graf-vta-mes-suc fila de ejemplo:', JSON.stringify(rows[0], null, 2));
     }
 
     res.json({
@@ -1174,7 +1174,7 @@ router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
   }
 });
 
-// Annual sales table from _ProyVentaAnual (with SP-missing fallback)
+// Tabla de ventas anuales desde _ProyVentaAnual (con fallback si no existe el SP)
 router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1188,14 +1188,14 @@ router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
 
       const normalizedRows = rows.map(normalizeRow);
 
-      console.log(`[dashboard] ventas-anuales-tabla: ${normalizedRows.length} rows found`);
+      console.log(`[dashboard] ventas-anuales-tabla: ${normalizedRows.length} filas encontradas`);
 
       res.json({
         success: true,
         data: normalizedRows,
       });
     } catch (procError) {
-      console.warn('[dashboard] ventas-anuales-tabla: stored procedure not found, returning empty data');
+      console.warn('[dashboard] ventas-anuales-tabla: procedimiento almacenado no encontrado, retornando datos vacíos');
 
       res.json({
         success: true,
@@ -1208,7 +1208,7 @@ router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
   }
 });
 
-// Multi-year annual sales projection (_ProyVentaAnual with configurable years)
+// Proyección de ventas anual multi-año (_ProyVentaAnual con años configurables)
 router.get('/dashboard/proy-venta-anual', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);

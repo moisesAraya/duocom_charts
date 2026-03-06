@@ -270,13 +270,13 @@ export const ChartCard = ({
   };
 
   /**
-   * HIT TESTING BARRAS
+   * DETECCIÓN DE TOQUE EN BARRAS
    */
   const handleBarTap = (x: number, y: number, contentWidth: number) => {
     if (!safeData.labels.length) return;
 
-    // The chart library leaves horizontal/vertical paddings in the plot area.
-    // If we don't account for that, taps can map to the wrong bar.
+    // La librería de gráficos deja padding horizontal/vertical en el área del plot.
+    // Si no lo compensamos, los taps pueden apuntar a la barra incorrecta.
     const plotPaddingX = Math.max(12, Math.min(32, contentWidth * 0.06));
     const plotLeft = plotPaddingX;
     const plotRight = contentWidth - plotPaddingX;
