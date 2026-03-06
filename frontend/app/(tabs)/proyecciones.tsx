@@ -1,3 +1,16 @@
+/**
+ * proyecciones.tsx — Pestaña de Proyecciones del dashboard.
+ *
+ * Muestra:
+ *  - Proyección de ventas del mes: gráfico de líneas con ventas reales vs.
+ *    proyección basada en el promedio diario hasta hoy.
+ *  - Proyección de IVA: estimación del IVA del mes actual (19%).
+ *  - Proyección de venta anual: tabla interactiva con datos de _ProyVentaAnual.
+ *
+ * Datos: endpoints /dashboard/proyeccion-ventas-mes, /dashboard/proyeccion-iva,
+ * /dashboard/proy-venta-anual.
+ */
+
 import { api } from '@/constants/api';
 import { Card, EmptyState } from '@/components/dashboard/card';
 import { ChartCard } from '@/components/dashboard/chart-card';

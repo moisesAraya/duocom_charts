@@ -1,3 +1,15 @@
+/**
+ * inventario.tsx — Pestaña de Inventario del dashboard.
+ *
+ * Muestra tres secciones:
+ *  - Inventario valorizado: top 20 productos con mayor valor en stock.
+ *  - Rotación de productos: top 20 más vendidos (cantidad).
+ *  - Rentabilidad: top 20 con mayor margen de contribución.
+ *
+ * Datos: endpoints /dashboard/inventario-valorizado, /dashboard/productos-rotacion,
+ * /dashboard/rentabilidad-productos.
+ */
+
 import { API_CONFIG, api } from '@/constants/api';
 import { ChartCard } from '@/components/dashboard/chart-card';
 import { FiltersPanel } from '@/components/dashboard/filters-panel';

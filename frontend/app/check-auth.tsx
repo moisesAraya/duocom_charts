@@ -1,3 +1,11 @@
+/**
+ * check-auth.tsx — Pantalla intermedia de verificación de autenticación.
+ *
+ * Similar a splash.tsx pero sin la lógica de cierre completo.
+ * Comprueba si existe usuario logueado en AsyncStorage,
+ * si sí redirige a tabs, si no redirige a login.
+ */
+
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';

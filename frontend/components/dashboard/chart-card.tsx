@@ -1,3 +1,16 @@
+/**
+ * chart-card.tsx — Componente reutilizable de tarjeta con gráfico.
+ *
+ * Renderiza gráficos de líneas, barras o pastel dentro de una Card con:
+ *  - Título y subtítulo
+ *  - Estado de carga (skeleton)
+ *  - Estado vacío con mensaje
+ *  - Modal fullscreen al tocar (para ver el gráfico más grande)
+ *  - Soporte para contenido extra (filtros, KPIs, tablas)
+ *
+ * Usado en todas las pestañas del dashboard.
+ */
+
 import React, { useMemo, useRef, useEffect, useState } from "react";
 import {
   Animated,

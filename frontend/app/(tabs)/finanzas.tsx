@@ -1,3 +1,16 @@
+/**
+ * finanzas.tsx — Pestaña de Finanzas del dashboard.
+ *
+ * Muestra información de cuentas por cobrar y cuentas por pagar:
+ *  - Cuentas por cobrar: top 20 clientes con mayor deuda.
+ *  - Cuentas por pagar: resumen por proveedor, flujo semanal/mensual,
+ *    y desglose de documentos vencidos.
+ *  - Clientes morosos: deudores con más de 30 días de atraso.
+ *
+ * Datos: endpoints /dashboard/cuentas-cobrar, /dashboard/cuentas-pagar/*,
+ * /dashboard/clientes-morosos.
+ */
+
 import { api } from '@/constants/api';
 import { FilterRow } from '@/components/dashboard/chart-filters';
 import { ScreenShell } from '@/components/dashboard/screen-shell';

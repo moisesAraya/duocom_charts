@@ -1,3 +1,22 @@
+/**
+ * firebirdPool.ts — Pool de conexiones a Firebird.
+ *
+ * A diferencia de firebird.ts (que abre y cierra una conexión por consulta),
+ * este módulo REUTILIZA conexiones. Mantiene un pool por cada combinación
+ * host:port:database:user, con un máximo de 5 conexiones simultáneas.
+ *
+ * Características:
+ *  - Si hay conexiones libres, las reutiliza.
+ *  - Si el pool está lleno, la petición queda en cola hasta que se libere una.
+ *  - Conexiones sin uso por 5 minutos se cierran automáticamente.
+ *  - Limpieza de inactivas cada 60 segundos.
+ *
+ * Exporta:
+ *  - executeQuery() → ejecuta una consulta SQL usando el pool
+ *  - disposePool()  → cierra todas las conexiones
+ *  - getPoolStats() → estadísticas del pool para monitoreo
+ */
+
 import fs from 'node:fs';
 import {
   createNativeClient,
@@ -9,15 +28,24 @@ import {
 import { config } from '../config';
 import type { FirebirdConnectionConfig } from './firebird';
 
+/* ═══════════════════════════════════════════
+   Tipos internos del pool
+═══════════════════════════════════════════ */
+
+/** Entrada del pool: un client + attachment + estado */
 type PoolEntry = {
   client: Client;
   attachment: Attachment;
+  /** true si esta conexión está siendo usada por una consulta */
   inUse: boolean;
+  /** Timestamp de último uso (para limpieza por inactividad) */
   lastUsed: number;
 };
 
+/** Resolver de una promesa esperando una conexión libre */
 type PendingResolver = (entry: PoolEntry) => void;
 
+/** Pool completo para una combinación de host/db/user */
 type FirebirdPool = {
   entries: PoolEntry[];
   pending: PendingResolver[];
@@ -25,16 +53,27 @@ type FirebirdPool = {
   options: FirebirdConnectionConfig;
 };
 
+/* ═══════════════════════════════════════════
+   Estado global del pool
+═══════════════════════════════════════════ */
+
+/** Mapa de pools indexado por clave "host:port:database:user" */
 const poolByKey = new Map<string, FirebirdPool>();
 
+/** Máximo de conexiones simultáneas por pool */
 const POOL_MAX_SIZE = 5;
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
+
+/** Tiempo máximo de inactividad antes de cerrar la conexión (5 min) */
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
+/* ═══════════════════════════════════════════
+   Funciones de conexión (similares a firebird.ts)
+═══════════════════════════════════════════ */
 
 const buildDatabaseUri = (options: FirebirdConnectionConfig): string => {
   if (options.host) {
     return `${options.host}/${options.port}:${options.database}`;
   }
-
   return options.database;
 };
 
@@ -44,7 +83,6 @@ const resolveLibraries = (customLibraryPath?: string | null): string[] => {
   if (customLibrary && fs.existsSync(customLibrary)) {
     candidates.push(customLibrary);
   }
-
   candidates.push(getDefaultLibraryFilename());
   return candidates;
 };
@@ -75,17 +113,18 @@ const createClient = (options: FirebirdConnectionConfig): Client => {
   return client;
 };
 
+/**
+ * Abre una nueva conexión a Firebird.
+ * NOTA: No loguea contraseñas por seguridad.
+ */
 const openAttachment = async (
   options: FirebirdConnectionConfig
 ): Promise<{ client: Client; attachment: Attachment }> => {
-  // LOG: Mostrar la configuración real usada para la conexión
-  console.info('[firebirdPool] Connecting with config:', {
+  console.info('[firebirdPool] Connecting:', {
     host: options.host,
     port: options.port,
     database: options.database,
     user: options.user,
-    password: options.password,
-    client: options.client,
   });
   const client = createClient(options);
   const uri = buildDatabaseUri(options);
@@ -93,7 +132,7 @@ const openAttachment = async (
     const attachment = await client.connect(uri);
     return { client, attachment };
   } catch (error) {
-    console.error('❌ [DB Pool] Connection failed', error);
+    console.error('[firebirdPool] Connection failed', error);
     await client.dispose();
     throw error;
   }
@@ -108,6 +147,11 @@ const startReadOnlyTransaction = async (
     accessMode: 'READ_ONLY',
   });
 
+/* ═══════════════════════════════════════════
+   Gestión del pool de conexiones
+═══════════════════════════════════════════ */
+
+/** Genera una clave única para identificar un pool por host:port:database:user */
 const buildPoolKey = (options: FirebirdConnectionConfig): string =>
   [
     options.host || 'local',
@@ -116,6 +160,7 @@ const buildPoolKey = (options: FirebirdConnectionConfig): string =>
     options.user,
   ].join(':');
 
+/** Obtiene un pool existente o crea uno nuevo para la configuración dada. */
 const getOrCreatePool = (options: FirebirdConnectionConfig): FirebirdPool => {
   const key = buildPoolKey(options);
   let pool = poolByKey.get(key);
@@ -133,6 +178,12 @@ const getOrCreatePool = (options: FirebirdConnectionConfig): FirebirdPool => {
   return pool;
 };
 
+/**
+ * Adquiere una conexión del pool:
+ * 1. Si hay una libre, la marca como en uso.
+ * 2. Si no pero hay espacio, crea una nueva.
+ * 3. Si el pool está lleno, queda en espera hasta que se libere una.
+ */
 const acquireFromPool = async (pool: FirebirdPool): Promise<PoolEntry> => {
   // Buscar una conexión libre
   const freeEntry = pool.entries.find(e => !e.inUse);
@@ -161,11 +212,14 @@ const acquireFromPool = async (pool: FirebirdPool): Promise<PoolEntry> => {
   });
 };
 
+/**
+ * Devuelve una conexión al pool tras usarla.
+ * Si hay peticiones en cola, le asigna la conexión inmediatamente.
+ */
 const releaseToPool = (pool: FirebirdPool, entry: PoolEntry): void => {
   entry.inUse = false;
   entry.lastUsed = Date.now();
 
-  // Si hay solicitudes pendientes, asignar la conexión
   const pendingResolver = pool.pending.shift();
   if (pendingResolver) {
     entry.inUse = true;
@@ -173,6 +227,7 @@ const releaseToPool = (pool: FirebirdPool, entry: PoolEntry): void => {
   }
 };
 
+/** Cierra conexiones que llevan más de IDLE_TIMEOUT_MS sin usarse. */
 const cleanupIdleConnections = async (pool: FirebirdPool): Promise<void> => {
   const now = Date.now();
   const entriesToRemove: PoolEntry[] = [];
@@ -192,28 +247,28 @@ const cleanupIdleConnections = async (pool: FirebirdPool): Promise<void> => {
         pool.entries.splice(index, 1);
       }
     } catch (error) {
-      console.error('❌ [DB Pool] Error cleaning up idle connection:', error);
+      console.error('[firebirdPool] Error cleaning up idle connection:', error);
     }
   }
 };
 
-// Ejecutar limpieza cada minuto
+// Limpieza automática de conexiones inactivas cada 60 segundos
 setInterval(() => {
   for (const pool of poolByKey.values()) {
     cleanupIdleConnections(pool).catch((error) => {
-      console.error('❌ [DB Pool] Error during cleanup:', error);
+      console.error('[firebirdPool] Error during cleanup:', error);
     });
   }
 }, 60 * 1000);
 
+/* ═══════════════════════════════════════════
+   API pública del pool
+═══════════════════════════════════════════ */
+
 /**
- * Ejecuta una consulta SQL usando un pool de conexiones.
- * Reutiliza conexiones existentes para mejorar el rendimiento.
- * 
- * @param options - Configuración de conexión
- * @param sql - Consulta SQL a ejecutar
- * @param params - Parámetros de la consulta
- * @returns Array de objetos con los resultados
+ * Ejecuta una consulta SQL usando el pool de conexiones.
+ * Adquiere una conexión, ejecuta la consulta en una transacción
+ * de solo lectura y devuelve la conexión al pool.
  */
 export const executeQuery = async <T extends object = Record<string, unknown>>(
   options: FirebirdConnectionConfig,
@@ -233,8 +288,8 @@ export const executeQuery = async <T extends object = Record<string, unknown>>(
   } catch (error) {
     try {
       await transaction.rollback();
-    } catch (rollbackError) {
-      // Ignorar errores de rollback
+    } catch (_rollbackError) {
+      // Ignorar errores de rollback para mostrar el error original
     }
     throw error;
   } finally {
@@ -242,9 +297,7 @@ export const executeQuery = async <T extends object = Record<string, unknown>>(
   }
 };
 
-/**
- * Cierra todas las conexiones del pool y limpia los recursos.
- */
+/** Cierra todas las conexiones de todos los pools y libera recursos. */
 export const disposePool = async (): Promise<void> => {
   for (const [key, pool] of poolByKey.entries()) {
     for (const entry of pool.entries) {
@@ -252,7 +305,7 @@ export const disposePool = async (): Promise<void> => {
         await entry.attachment.disconnect();
         await entry.client.dispose();
       } catch (error) {
-        console.error('❌ [DB Pool] Error disposing connection:', error);
+        console.error('[firebirdPool] Error disposing connection:', error);
       }
     }
     poolByKey.delete(key);
@@ -260,7 +313,8 @@ export const disposePool = async (): Promise<void> => {
 };
 
 /**
- * Obtiene estadísticas del pool para monitoreo.
+ * Devuelve estadísticas del pool para monitoreo / debugging.
+ * Útil para diagnosticar problemas de conexiones.
  */
 export const getPoolStats = (options: FirebirdConnectionConfig) => {
   const key = buildPoolKey(options);

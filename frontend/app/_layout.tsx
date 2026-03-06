@@ -1,3 +1,14 @@
+/**
+ * _layout.tsx — Layout raíz de la aplicación (expo-router).
+ *
+ * Configura:
+ *  - ErrorBoundary: captura errores no manejados para evitar crash.
+ *  - AppStateManager: detecta transiciones foreground/background
+ *    para limpiar la sesión si la app se cerró completamente.
+ *  - ThemeProvider: aplica tema claro u oscuro según preferencia del sistema.
+ *  - Stack de navegación: splash → login → (tabs).
+ */
+
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

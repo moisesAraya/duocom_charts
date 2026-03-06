@@ -1,3 +1,17 @@
+/**
+ * alertas.tsx — Pestaña de Alertas del dashboard.
+ *
+ * Muestra información operativa crítica:
+ *  - Productos en quiebre de stock: productos cuyo stock actual
+ *    está por debajo del mínimo configurado.
+ *  - Sugerencia de reposición: cantidades necesarias para reponer.
+ *  - Registro de eventos: últimas 50 transacciones realizadas.
+ *  - Consumo de materias primas: top 20 por cantidad consumida.
+ *
+ * Datos: endpoints /dashboard/productos-quiebre-stock, /dashboard/tiempo-reposicion,
+ * /dashboard/registro-eventos, /dashboard/consumo-materias-primas.
+ */
+
 import { api } from '@/constants/api';
 import { Card, EmptyState } from '@/components/dashboard/card';
 import { ChartCard } from '@/components/dashboard/chart-card';

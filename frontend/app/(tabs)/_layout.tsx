@@ -1,3 +1,14 @@
+/**
+ * _layout.tsx (tabs) — Configuración de la barra de navegación inferior.
+ *
+ * Define 5 pestañas: Ventas, Inventario, Finanzas, Proyecciones, Alertas.
+ * El header muestra el nombre de la empresa (obtenido del JWT/config) sobre
+ * un gradiente azul-naranja, con botón de cerrar sesión a la derecha.
+ *
+ * Envuelve todo en <FiltersProvider> para compartir filtros
+ * (rango de fechas, sucursales) entre todas las pestañas.
+ */
+
 import { Tabs } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 

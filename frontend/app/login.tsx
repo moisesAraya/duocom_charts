@@ -1,3 +1,15 @@
+/**
+ * login.tsx — Pantalla de inicio de sesión.
+ *
+ * Flujo de autenticación:
+ *  1. El usuario ingresa su RUT (identificador tributario de la empresa).
+ *  2. Al escribir 8+ dígitos se valida automáticamente contra /api/validar-rut.
+ *     - Si el RUT existe, se obtiene la configuración del cliente (razón social, BD, etc.).
+ *  3. El usuario ingresa usuario y contraseña.
+ *  4. Se envía POST a /api/login con las credenciales + config del cliente.
+ *  5. Si el login es exitoso se guarda el token JWT y se navega a la app.
+ */
+
 import React, { useState, useRef, useEffect } from "react";
 import {
   StyleSheet,
@@ -26,6 +38,7 @@ import {
   esUsuarioAdmin,
   setClienteConfig,
 } from "@/utils/config";
+import { API_CONFIG } from "@/constants/api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
@@ -73,11 +86,12 @@ export default function LoginScreen() {
   const validarRutAutomatico = async () => {
     try {
       const API_URL = stripTrailingSlash(await getBackendUrl());
+      // Enviar RUT al backend para validar que existe en la BD central
       const response = await fetch(`${API_URL}/api/validar-rut`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "Duocom2025SecretKey!@#",
+          "x-api-key": API_CONFIG.API_KEY,
         },
         body: JSON.stringify({ rut }),
       });
@@ -90,7 +104,7 @@ export default function LoginScreen() {
         setRutValidado(false);
       }
     } catch (error) {
-      console.error("Error validando RUT:", error);
+      console.error("[login] Error validando RUT:", error);
       setRutValidado(false);
     }
   };
@@ -104,11 +118,12 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       const API_URL = stripTrailingSlash(await getBackendUrl());
+      // Re-validar RUT antes de enviar login
       const response = await fetch(`${API_URL}/api/validar-rut`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "Duocom2025SecretKey!@#",
+          "x-api-key": API_CONFIG.API_KEY,
         },
         body: JSON.stringify({ rut }),
       });
@@ -147,7 +162,7 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       const API_URL = stripTrailingSlash(await getBackendUrl());
-      console.log("🔐 [LOGIN] URL obtenida de config:", API_URL);
+      console.log("[login] URL obtenida de config:", API_URL);
 
       const validarResponse = await fetch(`${API_URL}/api/validar-rut`, {
         method: "POST",
@@ -163,16 +178,17 @@ export default function LoginScreen() {
         return;
       }
       const clienteConfig = validarJson.data;
-      console.log("🔐 [LOGIN] Config obtenida:", clienteConfig.razonSocial);
+      console.log("[login] Config obtenida:", clienteConfig.razonSocial);
 
+      // Enviar credenciales al endpoint de login
       let json = null;
       try {
-        console.log("🔐 [LOGIN] Intentando conectar a:", `${API_URL}/api/login`);
+        console.log("[login] Intentando conectar a:", `${API_URL}/api/login`);
         const response = await fetch(`${API_URL}/api/login`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": "Duocom2025SecretKey!@#",
+            "x-api-key": API_CONFIG.API_KEY,
             "x-cliente-config": JSON.stringify(clienteConfig),
           },
           body: JSON.stringify({
@@ -181,14 +197,14 @@ export default function LoginScreen() {
             rut: rut,
           }),
         });
-        console.log("🔐 [LOGIN] Respuesta recibida:", response.status);
+        console.log("[login] Respuesta recibida:", response.status);
         json = await safeJsonFromResponse(response);
         if (!json) {
           throw new Error(`Respuesta vacia o invalida desde ${API_URL}/api/login`);
         }
-        console.log("🔐 [LOGIN] Conexión exitosa con:", API_URL);
+        console.log("[login] Conexión exitosa con:", API_URL);
       } catch (error: any) {
-        console.log("❌ [LOGIN] Falló con:", API_URL, error.message);
+        console.log("[login] Falló con:", API_URL, error.message);
         throw error;
       }
       if (!json) {

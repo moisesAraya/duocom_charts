@@ -1,3 +1,21 @@
+/**
+ * api.ts — Cliente HTTP centralizado para la aplicación.
+ *
+ * Configura una instancia de Axios con la URL base del backend,
+ * manejo de token JWT y un wrapper que permite modo demo con datos mock.
+ *
+ * La URL del backend se resuelve en este orden:
+ *  1. Variable de entorno EXPO_PUBLIC_API_URL
+ *  2. Campo `apiUrl` en app.json → extra
+ *  3. Fallback a https://duocom.dyndns.org/charts
+ *
+ * Exports principales:
+ *  - API_CONFIG: { BASE_URL, API_KEY, DEMO_MODE }
+ *  - api: wrapper de Axios con soporte de modo demo
+ *  - setAuthToken(): guarda el JWT para futuras peticiones
+ *  - getApiKeyHeader(): devuelve el header x-api-key
+ */
+
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import Constants from 'expo-constants';
 import { DEMO_MODE, getMockResponse } from './mock-data';

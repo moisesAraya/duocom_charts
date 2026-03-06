@@ -1,3 +1,16 @@
+/**
+ * firebird.ts — Cliente de conexión simple a Firebird.
+ *
+ * Crea una conexión nueva para CADA consulta y la cierra al terminar.
+ * Es el módulo más simple de acceso a BD; para reutilizar conexiones
+ * existe firebirdPool.ts (pool de conexiones).
+ *
+ * Exporta:
+ *  - query()         → ejecuta una consulta SQL read-only
+ *  - disposeClient() → no-op, existe por compatibilidad
+ *  - FirebirdConnectionConfig (tipo)
+ */
+
 import fs from 'node:fs';
 import {
   createNativeClient,
@@ -8,6 +21,11 @@ import {
 } from 'node-firebird-driver-native';
 import { config } from '../config';
 
+/* ═══════════════════════════════════════════
+   Tipo de configuración de conexión
+═══════════════════════════════════════════ */
+
+/** Datos necesarios para conectarse a una BD Firebird */
 export type FirebirdConnectionConfig = {
   host?: string;
   port: number;
@@ -15,28 +33,40 @@ export type FirebirdConnectionConfig = {
   user: string;
   password: string;
   role?: string | null;
+  /** Ruta a la librería nativa del cliente Firebird */
   client?: string | null;
 };
 
+/* ═══════════════════════════════════════════
+   Conexión al servidor Firebird
+═══════════════════════════════════════════ */
+
+/** Construye la URI de conexión: "host/port:database" o solo "database" si es local. */
 const buildDatabaseUri = (options: FirebirdConnectionConfig): string => {
   if (options.host) {
     return `${options.host}/${options.port}:${options.database}`;
   }
-
   return options.database;
 };
 
+/**
+ * Resuelve la lista de rutas candidatas para la librería nativa de Firebird.
+ * Primero intenta con la ruta personalizada (de .env), si no existe usa la por defecto.
+ */
 const resolveLibraries = (customLibraryPath?: string | null): string[] => {
   const candidates: string[] = [];
   const customLibrary = customLibraryPath?.trim();
   if (customLibrary && fs.existsSync(customLibrary)) {
     candidates.push(customLibrary);
   }
-
   candidates.push(getDefaultLibraryFilename());
   return candidates;
 };
 
+/**
+ * Crea el cliente nativo de Firebird probando con cada librería candidata.
+ * Si la primera falla, intenta con la siguiente.
+ */
 const createClientWithFallback = (customLibraryPath?: string | null): Client => {
   const libraries = resolveLibraries(customLibraryPath);
   let lastError: unknown;
@@ -55,6 +85,7 @@ const createClientWithFallback = (customLibraryPath?: string | null): Client => 
   throw lastError;
 };
 
+/** Crea un cliente Firebird configurado con las credenciales dadas. */
 const createClient = (options: FirebirdConnectionConfig): Client => {
   const client = createClientWithFallback(options.client);
   client.defaultConnectOptions = {
@@ -65,12 +96,16 @@ const createClient = (options: FirebirdConnectionConfig): Client => {
   return client;
 };
 
+/**
+ * Abre una conexión (attachment) a la base de datos Firebird.
+ * Devuelve el client y el attachment para usarlos en consultas.
+ */
 const openAttachment = async (
   options: FirebirdConnectionConfig
 ): Promise<{ client: Client; attachment: Attachment }> => {
   const client = createClient(options);
   const uri = buildDatabaseUri(options);
-  console.info(`[firebird] Connecting to ${uri} as ${options.user}`);
+  console.info(`[firebird] Connecting to ${uri}`);
   try {
     const attachment = await client.connect(uri);
     console.info('[firebird] Connection established');
@@ -82,6 +117,7 @@ const openAttachment = async (
   }
 };
 
+/** Inicia una transacción de solo lectura (READ_COMMITTED + READ_ONLY). */
 const startReadOnlyTransaction = async (
   attachment: Attachment
 ): Promise<Transaction> =>

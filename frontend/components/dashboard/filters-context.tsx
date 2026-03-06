@@ -1,3 +1,14 @@
+/**
+ * filters-context.tsx — Contexto global de filtros del dashboard.
+ *
+ * Provee a todas las pestañas:
+ *  - Lista de sucursales (cargada desde /api/sucursales)
+ *  - Sucursales seleccionadas (multi-select)
+ *  - Parámetros de query ("sucursal=A,B,C") listos para enviar a la API
+ *
+ * Se monta una sola vez en el layout de tabs.
+ */
+
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '@/constants/api';
 

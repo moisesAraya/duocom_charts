@@ -1,3 +1,17 @@
+/**
+ * config.ts — Gestión de sesión, autenticación y configuración del cliente.
+ *
+ * Usa AsyncStorage para persistir:
+ *  - Token JWT del usuario autenticado
+ *  - Datos del usuario (nombre, rol, RUT)
+ *  - Configuración del cliente (empresa según su RUT)
+ *  - URL del backend (configurable en tiempo de ejecución)
+ *  - Estado de la app (para detectar cierre completo vs. background)
+ *
+ * Al detectar que la app se cerró completamente (no background),
+ * limpia la sesión automáticamente para forzar re-login.
+ */
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG, api, getApiKeyHeader, setAuthToken } from '@/constants/api';
 
@@ -10,6 +24,7 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** Claves de AsyncStorage usadas en toda la app */
 const STORAGE_KEYS = {
   USUARIO_ACTUAL: '@usuario_actual',
   CLIENTE_CONFIG: '@cliente_config',
@@ -204,19 +219,19 @@ export const refreshClienteConfig = async (
     if (response.data?.success && response.data.data) {
       await setClienteConfig(response.data.data);
       // eslint-disable-next-line no-console
-      console.log('✅ [CONFIG] Cliente config updated');
+      console.log('[config] Cliente config updated');
       return response.data.data;
     }
 
     // eslint-disable-next-line no-console
     console.error(
-      '❌ [CONFIG] Failed to refresh cliente config',
+      '[config] Failed to refresh cliente config',
       response.data?.error ?? 'Unknown error'
     );
     return null;
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('❌ [CONFIG] Error refreshing cliente config', error);
+    console.error('[config] Error refreshing cliente config', error);
     return null;
   }
 };

@@ -1,8 +1,26 @@
+/**
+ * authJwt.ts — Middleware de autenticación JWT.
+ *
+ * Verifica el token JWT del header Authorization y extrae la información
+ * del cliente para inyectar la configuración de BD correcta en req.dbConfig.
+ *
+ * Flujo:
+ *  1. Si el token contiene datos del cliente (rut, ip, bdAlias),
+ *     configura req.dbConfig para apuntar a la BD de ese cliente.
+ *  2. Si el token es inválido o no tiene datos de cliente,
+ *     apunta a la BD central (DUOCOMAPPS.Fdb).
+ *
+ * Esto permite que cada endpoint use req.dbConfig sin preocuparse
+ * de a qué base de datos conectarse.
+ */
+
 import { RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { query, type FirebirdConnectionConfig } from '../db/firebird';
+import { readField, parseRutNumber } from '../helpers/db-helpers';
 
+/** Estructura de un registro de cliente en la BD central */
 type UserRecord = {
   rut: number;
   fbHost: string;
@@ -10,26 +28,10 @@ type UserRecord = {
   fbDatabase: string;
 };
 
-const readField = (row: Record<string, unknown>, key: string): string => {
-  const direct = row[key];
-  if (direct !== undefined && direct !== null) return String(direct);
-  const upper = row[key.toUpperCase()];
-  if (upper !== undefined && upper !== null) return String(upper);
-  const lower = row[key.toLowerCase()];
-  if (lower !== undefined && lower !== null) return String(lower);
-  return '';
-};
-
-const parseRutNumber = (value: string | number): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const normalized = value.replace(/[^\d]/g, '');
-    const parsed = Number.parseInt(normalized, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
+/**
+ * Busca un cliente activo por RUT en la BD central (DUOCOMAPPS).
+ * Retorna host, puerto y alias de BD del cliente, o null si no existe.
+ */
 const fetchUserRecord = async (rut: number): Promise<UserRecord | null> => {
   const rows = await query<Record<string, unknown>>(
     'SELECT * FROM "Clientes" WHERE "RUT" = ? AND "ESTADO" = 1',
@@ -38,7 +40,6 @@ const fetchUserRecord = async (rut: number): Promise<UserRecord | null> => {
 
   if (!rows.length) return null;
   const row = rows[0];
-  // Usar config.firebird.port si no hay valor en la base
   const puertoRaw = readField(row, 'PUERTO');
   return {
     rut,
@@ -48,6 +49,9 @@ const fetchUserRecord = async (rut: number): Promise<UserRecord | null> => {
   };
 };
 
+/**
+ * Middleware principal: decodifica el JWT y configura req.dbConfig.
+ */
 export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -58,7 +62,7 @@ export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
       try {
         const decoded = jwt.verify(token, config.jwtSecret) as any;
 
-        // Si el token contiene información del cliente, usar la base de datos del cliente
+        // Si el token contiene información del cliente, usar su BD específica
         if (decoded.rut && decoded.ip && decoded.bdAlias) {
           dbConfig = {
             host: decoded.ip,
@@ -72,12 +76,12 @@ export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
           req.dbConfig = dbConfig;
           return next();
         }
-      } catch (jwtError) {
-        // Token inválido, continuar con base de datos principal
+      } catch (_jwtError) {
+        // Token inválido — continuar con BD central
       }
     }
 
-    // Usar base de datos principal (DUOCOMAPPS.Fdb) para validaciones y cuando no hay token
+    // Fallback: usar BD central (DUOCOMAPPS.Fdb)
     dbConfig = {
       host: config.firebird.host,
       port: config.firebird.port,

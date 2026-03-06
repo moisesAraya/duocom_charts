@@ -1,18 +1,26 @@
+/**
+ * cliente-config.ts — Ruta para obtener la configuración de un cliente.
+ *
+ * GET /cliente-config?idCliente=N (o usa el RUT del JWT)
+ *
+ * Consulta la tabla "Clientes" en la BD del cliente (no la central)
+ * y devuelve su configuración personalizada (CONFIGURACION_JSON),
+ * que incluye preferencias visuales, módulos habilitados, etc.
+ *
+ * Requiere: API Key + JWT (el middleware authJwt configura req.dbConfig).
+ */
+
 import { Router, type Request } from 'express';
 import { executeQuery } from '../db/firebirdPool';
+import { readField, parseRutNumber, getDbConfig } from '../helpers/db-helpers';
 
 const router = Router();
 
-const readField = (row: Record<string, unknown>, key: string): string => {
-  const direct = row[key];
-  if (direct !== undefined && direct !== null) return String(direct);
-  const upper = row[key.toUpperCase()];
-  if (upper !== undefined && upper !== null) return String(upper);
-  const lower = row[key.toLowerCase()];
-  if (lower !== undefined && lower !== null) return String(lower);
-  return '';
-};
+/* ═══════════════════════════════════════════
+   Funciones auxiliares locales
+═══════════════════════════════════════════ */
 
+/** Parsea un ID de cliente (puede ser número o string). */
 const parseIdCliente = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -22,33 +30,22 @@ const parseIdCliente = (value: unknown): number | null => {
   return null;
 };
 
-const parseRutNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const normalized = value.replace(/[^\d]/g, '');
-    const parsed = Number.parseInt(normalized, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
+/** Parsea el campo CONFIGURACION_JSON de un row. */
 const parseConfiguracion = (value: string): Record<string, unknown> => {
   const trimmed = value.trim();
   if (!trimmed) return {};
   return JSON.parse(trimmed) as Record<string, unknown>;
 };
 
+/** Obtiene el RUT del usuario del JWT (inyectado por authJwt). */
 const getRutFromRequest = (req: Request): number | null => {
   if (!req.user) return null;
   return parseRutNumber(req.user.rut);
 };
 
-const getDbConfig = (req: Request) => {
-  if (!req.dbConfig) {
-    throw new Error('Missing database configuration');
-  }
-  return req.dbConfig;
-};
+/* ═══════════════════════════════════════════
+   Ruta
+═══════════════════════════════════════════ */
 
 router.get('/cliente-config', async (req, res) => {
   const idCliente = parseIdCliente(req.query.idCliente);
@@ -63,8 +60,7 @@ router.get('/cliente-config', async (req, res) => {
   try {
     dbConfig = getDbConfig(req);
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('❌ [BACKEND] Missing db config', error);
+    console.error('[cliente-config] Missing db config', error);
     res.status(500).json({
       success: false,
       error: 'Configuracion de base de datos no disponible',
@@ -73,10 +69,10 @@ router.get('/cliente-config', async (req, res) => {
   }
 
   const filterLabel = idCliente ? `ID ${idCliente}` : `RUT ${rut ?? 'N/A'}`;
-  // eslint-disable-next-line no-console
-  console.log(`🔍 [BACKEND] Cliente config query for ${filterLabel}`);
+  console.log(`[cliente-config] Buscando cliente por ${filterLabel}`);
 
   try {
+    // Consulta por ID o por RUT según lo disponible
     const sql = idCliente
       ? 'SELECT "ID# CLIENTE", "RUT", "NOMBRE", "CONFIGURACION_JSON" FROM "Clientes" WHERE "ID# CLIENTE" = ? AND "ESTADO" = 1'
       : 'SELECT "ID# CLIENTE", "RUT", "NOMBRE", "CONFIGURACION_JSON" FROM "Clientes" WHERE "RUT" = ? AND "ESTADO" = 1';
@@ -88,8 +84,7 @@ router.get('/cliente-config', async (req, res) => {
     );
 
     if (!rows.length) {
-      // eslint-disable-next-line no-console
-      console.log('❌ [BACKEND] Cliente not found');
+      console.log('[cliente-config] Cliente no encontrado');
       res.status(404).json({ success: false, error: 'Cliente no encontrado' });
       return;
     }
@@ -101,8 +96,7 @@ router.get('/cliente-config', async (req, res) => {
     try {
       configuracion = rawConfig ? parseConfiguracion(rawConfig) : {};
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('❌ [BACKEND] Invalid Configuracion_JSON', error);
+      console.error('[cliente-config] CONFIGURACION_JSON inválido', error);
       res
         .status(422)
         .json({ success: false, error: 'Configuracion_JSON invalida' });
@@ -112,8 +106,7 @@ router.get('/cliente-config', async (req, res) => {
     const idValue = readField(cliente, 'ID# CLIENTE');
     const idNumber = parseIdCliente(idValue);
 
-    // eslint-disable-next-line no-console
-    console.log('✅ [BACKEND] Cliente config retrieved');
+    console.log('[cliente-config] Configuración obtenida');
     res.json({
       success: true,
       data: {
@@ -124,8 +117,7 @@ router.get('/cliente-config', async (req, res) => {
       },
     });
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('❌ [BACKEND] Cliente config error', error);
+    console.error('[cliente-config] Error:', error);
     res.status(500).json({ success: false, error: 'Error interno del servidor' });
   }
 });

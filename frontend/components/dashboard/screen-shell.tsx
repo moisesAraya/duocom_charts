@@ -1,3 +1,12 @@
+/**
+ * screen-shell.tsx — Layout común de cada pestaña del dashboard.
+ *
+ * Provee:
+ *  - Header con el nombre de la empresa (cargado de AsyncStorage/backend)
+ *  - ScrollView con pull-to-refresh
+ *  - Padding y estilos consistentes
+ */
+
 import React, { useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getClienteConfig, refreshClienteConfig } from '@/utils/config';

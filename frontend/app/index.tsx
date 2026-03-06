@@ -1,3 +1,10 @@
+/**
+ * index.tsx — Punto de entrada de la app (ruta "/").
+ *
+ * Muestra el logo de DuoCom Charts durante 2 segundos y luego
+ * redirige a /check-auth que decide si ir a login o a la app.
+ */
+
 import React, { useEffect } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';

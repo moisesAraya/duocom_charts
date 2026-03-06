@@ -1,205 +1,41 @@
+/**
+ * dashboard.ts — Main dashboard API router.
+ *
+ * Exposes ~20 endpoints that power the Duocom mobile dashboard,
+ * covering sales, inventory, finance (accounts payable / receivable),
+ * and projection data.  Every endpoint reads from Firebird stored
+ * procedures through the shared helpers in ../helpers/db-helpers.
+ */
+
 import { Router, type Request } from 'express';
 import { query, type FirebirdConnectionConfig } from '../db/firebird';
+import {
+  normalizeKey,
+  normalizeRow,
+  getDbConfig,
+  toNumber,
+  toString,
+  getSucursalFromRow,
+  getTotalFromRow,
+  parseDateParam,
+  getDateRange,
+  buildProcedureSql,
+  runProcedure,
+  runProcedureWithFallbacks,
+  runProcedureByNames,
+  uniqueList,
+  parseSucursalList,
+  parseLimit,
+  normalizeBranch,
+  parseNumber,
+  type NormalizedRow,
+} from '../helpers/db-helpers';
 
 const router = Router();
 
-type NormalizedRow = Record<string, unknown>;
-
-const normalizeKey = (key: string): string =>
-  key
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/gi, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase();
-
-const normalizeRow = (row: Record<string, unknown>): NormalizedRow => {
-  const normalized: NormalizedRow = {};
-  for (const [key, value] of Object.entries(row)) {
-    normalized[normalizeKey(key)] = value;
-  }
-  return normalized;
-};
-
-const getDbConfig = (req: Request): FirebirdConnectionConfig => {
-  if (!req.dbConfig) {
-    throw new Error('Missing database configuration');
-  }
-  return req.dbConfig;
-};
-
-
-const toNumber = (value: unknown): number => {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value.replace(',', '.'));
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-  return 0;
-};
-
-const toString = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
-  return String(value).trim();
-};
-
-// Devuelve el valor de sucursal de un row, probando varias variantes
-const getSucursalFromRow = (row: Record<string, unknown>): string => {
-  return (
-    toString(row.sucursal) ||
-    toString(row["descripcion_sucursal"]) ||
-    toString(row["nombre_sucursal"]) ||
-    toString(row["nombre"]) ||
-    toString(row["descripcion"]) ||
-    toString(row["Id# Sucursal"]) ||
-    toString(row["Id Sucursal"]) ||
-    toString(row["id_sucursal"]) ||
-    toString(row["suc"]) ||
-    'N/A'
-  );
-};
-
-// Devuelve el valor de total de ventas de un row, probando varias variantes
-const getTotalFromRow = (row: Record<string, unknown>): number => {
-  return (
-    toNumber(row.total) ||
-    toNumber(row.total_dia) ||
-    toNumber(row.total_venta) ||
-    toNumber(row.t_bruto) ||
-    toNumber(row.importe) ||
-    toNumber(row.monto) ||
-    0
-  );
-};
-
-const parseNumber = (value: string, defaultValue: number): number => {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? defaultValue : parsed;
-};
-
-const parseDateParam = (value: unknown): Date | null => {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const candidate = new Date(`${trimmed}T00:00:00`);
-  return Number.isNaN(candidate.getTime()) ? null : candidate;
-};
-
-const getDateRange = (queryParams: Record<string, unknown>): { start: Date; end: Date } => {
-  const now = new Date();
-  const end =
-    parseDateParam(queryParams.hasta) ??
-    parseDateParam(queryParams.to) ??
-    parseDateParam(queryParams.end) ??
-    now;
-  const start =
-    parseDateParam(queryParams.desde) ??
-    parseDateParam(queryParams.from) ??
-    parseDateParam(queryParams.start) ??
-    new Date(end.getFullYear(), end.getMonth(), end.getDate() - 30);
-
-  return { start, end };
-};
-
-const buildProcedureSql = (
-  name: string,
-  params: unknown[],
-  limit?: number
-): string => {
-  if (!params.length) {
-    return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM "${name}"`;
-  }
-  const placeholders = params.map(() => '?').join(', ');
-  return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM "${name}"(${placeholders})`;
-};
-
-const runProcedure = async (
-  dbConfig: FirebirdConnectionConfig,
-  name: string,
-  params: unknown[] = [],
-  options?: { limit?: number }
-): Promise<NormalizedRow[]> => {
-  const sql = buildProcedureSql(name, params, options?.limit);
-  const rows = await query<Record<string, unknown>>(sql, params, dbConfig);
-  return rows.map(normalizeRow);
-};
-
-const runProcedureWithFallbacks = async (
-  dbConfig: FirebirdConnectionConfig,
-  name: string,
-  paramSets: unknown[][],
-  options?: { limit?: number }
-): Promise<NormalizedRow[]> => {
-  let lastError: unknown;
-
-  for (const params of paramSets) {
-    try {
-      return await runProcedure(dbConfig, name, params, options);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (message.toLowerCase().includes('parameter mismatch')) {
-        lastError = error;
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  throw lastError;
-};
-
-const runProcedureByNames = async (
-  dbConfig: FirebirdConnectionConfig,
-  names: string[],
-  paramSets: unknown[][],
-  options?: { limit?: number }
-): Promise<NormalizedRow[]> => {
-  let lastError: unknown;
-
-  for (const name of names) {
-    try {
-      return await runProcedureWithFallbacks(dbConfig, name, paramSets, options);
-    } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : '';
-      if (
-        message.includes('procedure unknown') ||
-        message.includes('procedure name') ||
-        message.includes('procedure not found')
-      ) {
-        lastError = error;
-        continue;
-      }
-      lastError = error;
-    }
-  }
-
-  throw lastError;
-};
-
-const uniqueList = (values: string[]): string[] =>
-  Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
-
-const parseSucursalList = (value: unknown): string[] => {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value.flatMap(item => String(item).split(',').map(v => v.trim())).filter(Boolean);
-  }
-  return String(value)
-    .split(',')
-    .map(item => item.trim())
-    .filter(Boolean);
-};
-
-const normalizeBranch = (value: unknown): string =>
-  toString(value).toLowerCase().replace(/\s+/g, ' ').trim();
-
-const parseLimit = (value: unknown, fallback: number): number => {
-  const parsed = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(Math.max(parsed, 50), 5000);
-};
+/* ═══════════════════════════════════════════
+   Local types & helpers (specific to dashboard)
+═══════════════════════════════════════════ */
 
 type CuentasPagarDoc = {
   proveedor: string;
@@ -342,6 +178,11 @@ const getIsoWeekLabel = (date: Date): string => {
 const getMonthLabel = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
+/* ═══════════════════════════════════════════
+   Routes
+═══════════════════════════════════════════ */
+
+// List all branches (sucursales) available in the database
 router.get('/sucursales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -351,9 +192,7 @@ router.get('/sucursales', async (req, res, next) => {
       dbConfig
     );
     const normalizedRows = rows.map(normalizeRow);
-    // eslint-disable-next-line no-console
-    console.log('[sucursales] rows', rows.length);
-    // Usar la misma lógica de getSucursalFromRow y normalizar para que coincida con los endpoints de ventas
+    console.log('[dashboard] sucursales rows', rows.length);
     const branches = uniqueList(
       normalizedRows.map(row => normalizeBranch(getSucursalFromRow(row)))
     );
@@ -366,6 +205,7 @@ router.get('/sucursales', async (req, res, next) => {
   }
 });
 
+// Hourly customer traffic per branch
 router.get('/dashboard/clientes-hora', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -404,6 +244,7 @@ router.get('/dashboard/clientes-hora', async (req, res, next) => {
   }
 });
 
+// Sales breakdown by payment method
 router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -435,6 +276,7 @@ router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
   }
 });
 
+// Sales grouped by product group / category
 router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -476,6 +318,7 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
   }
 });
 
+// Annual sales totals per branch (multi-year)
 router.get('/dashboard/ventas-anuales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -511,6 +354,7 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
   }
 });
 
+// Daily sales summary within a date range (monthly view)
 router.get('/dashboard/resumen-mensual-ventas', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -542,6 +386,7 @@ router.get('/dashboard/resumen-mensual-ventas', async (req, res, next) => {
   }
 });
 
+// Monthly totals for a specific year (annual overview)
 router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -576,6 +421,7 @@ router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
   }
 });
 
+// Per-transaction sales feed (minute-level detail)
 router.get('/dashboard/venta-minuto', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -598,6 +444,7 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
   }
 });
 
+// Valued inventory (top 20 products by stock value)
 router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -669,6 +516,7 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
   }
 });
 
+// Product rotation / turnover ranking (top 20)
 router.get('/dashboard/productos-rotacion', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -697,6 +545,7 @@ router.get('/dashboard/productos-rotacion', async (req, res, next) => {
   }
 });
 
+// Product profitability ranking (top 20 by contribution)
 router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -725,6 +574,7 @@ router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
   }
 });
 
+// Accounts receivable (top 20 by outstanding balance)
 router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -759,6 +609,7 @@ router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
   }
 });
 
+// Accounts payable (top 20 by outstanding balance)
 router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -784,6 +635,7 @@ router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
   }
 });
 
+// Accounts payable summary grouped by supplier
 router.get('/dashboard/cuentas-pagar/resumen-proveedor', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -836,6 +688,7 @@ router.get('/dashboard/cuentas-pagar/resumen-proveedor', async (req, res, next) 
   }
 });
 
+// Accounts payable cash-flow forecast (weekly + monthly buckets)
 router.get('/dashboard/cuentas-pagar/flujo', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -940,6 +793,7 @@ router.get('/dashboard/cuentas-pagar/flujo', async (req, res, next) => {
   }
 });
 
+// Overdue payables grouped by supplier
 router.get('/dashboard/cuentas-pagar/vencidos-proveedor', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -990,6 +844,7 @@ router.get('/dashboard/cuentas-pagar/vencidos-proveedor', async (req, res, next)
   }
 });
 
+// Delinquent customers (>30 days overdue with positive balance)
 router.get('/dashboard/clientes-morosos', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1024,6 +879,7 @@ router.get('/dashboard/clientes-morosos', async (req, res, next) => {
   }
 });
 
+// Month-to-date sales projection (daily actual vs. projected)
 router.get('/dashboard/proyeccion-ventas-mes', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1068,6 +924,7 @@ router.get('/dashboard/proyeccion-ventas-mes', async (req, res, next) => {
   }
 });
 
+// Estimated VAT (IVA) projection for the current month
 router.get('/dashboard/proyeccion-iva', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1108,6 +965,7 @@ router.get('/dashboard/proyeccion-iva', async (req, res, next) => {
   }
 });
 
+// Recent sales event log (last 50 transactions)
 router.get('/dashboard/registro-eventos', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1132,6 +990,7 @@ router.get('/dashboard/registro-eventos', async (req, res, next) => {
   }
 });
 
+// Raw-material consumption ranking (top 20)
 router.get('/dashboard/consumo-materias-primas', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1160,6 +1019,7 @@ router.get('/dashboard/consumo-materias-primas', async (req, res, next) => {
   }
 });
 
+// Products below minimum stock level (stock-out risk)
 router.get('/dashboard/productos-quiebre-stock', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1185,6 +1045,7 @@ router.get('/dashboard/productos-quiebre-stock', async (req, res, next) => {
   }
 });
 
+// Products needing replenishment (reposition quantities)
 router.get('/dashboard/tiempo-reposicion', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1209,47 +1070,20 @@ router.get('/dashboard/tiempo-reposicion', async (req, res, next) => {
   }
 });
 
-// Temporary route to list available procedures
-router.get('/debug/procedures', async (req, res, next) => {
-  try {
-    const dbConfig = getDbConfig(req);
-    const { query } = require('../db/firebird');
-    const rows = await query(dbConfig, 'SELECT RDB$PROCEDURE_NAME FROM RDB$PROCEDURES');
-    res.json({ procedures: rows.map((r: any) => r['RDB$PROCEDURE_NAME']) });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Temporary route to list available tables
-router.get('/debug/tables', async (req, res, next) => {
-  try {
-    const dbConfig = getDbConfig(req);
-    const rows = await query('SELECT RDB$RELATION_NAME FROM RDB$RELATIONS WHERE RDB$VIEW_BLR IS NULL AND RDB$SYSTEM_FLAG = 0', [], dbConfig);
-    res.json({ tables: rows.map(r => r['RDB$RELATION_NAME']) });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Análisis de Ventas Mensual - Graf_VtaMes_Suc
+// Monthly sales analysis by branch (Graf_VtaMes_Suc stored procedure)
 router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const ano = parseNumber(toString(req.query.ano), new Date().getFullYear());
     const mes = parseNumber(toString(req.query.mes), new Date().getMonth() + 1);
 
-    // eslint-disable-next-line no-console
-    console.log(`📊 [BACKEND] Análisis Ventas Mensual: año=${ano}, mes=${mes}`);
+    console.log(`[dashboard] analisis-ventas-mensual: ano=${ano}, mes=${mes}`);
 
-    // NOTA: En LaTorre la columna es 'Id# Sucursal'.
     const sql = 'SELECT * FROM "Graf_VtaMes_Suc"(?, ?)';
     const rows = await query<Record<string, unknown>>(sql, [ano, mes], dbConfig);
 
-    // Organizar datos por series
     const seriesMap = new Map<number, any[]>();
     rows.forEach(row => {
-      // Buscar todas las variantes posibles de la columna
       const idSucursal = toNumber(
         row['IdSucursal'] ||
         row['IDSUCURSAL'] ||
@@ -1297,8 +1131,7 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
       };
     });
 
-    // eslint-disable-next-line no-console
-    console.log(`✅ [BACKEND] ${series.length} series encontradas`);
+    console.log(`[dashboard] analisis-ventas-mensual: ${series.length} series found`);
 
     res.json({
       success: true,
@@ -1309,52 +1142,45 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
       },
     });
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('❌ [BACKEND] Error en análisis ventas mensual:', error);
+    console.error('[dashboard] error in analisis-ventas-mensual:', error);
     next(error);
   }
 });
 
-// Endpoint alternativo para compatibilidad con frontend
+// Alternative endpoint for frontend compatibility (raw Graf_VtaMes_Suc rows)
 router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const ano = parseNumber(toString(req.query.ano), new Date().getFullYear());
     const mes = parseNumber(toString(req.query.mes), new Date().getMonth() + 1);
 
-    // eslint-disable-next-line no-console
-    console.log(`📊 [BACKEND] Graf Vta Mes Suc: año=${ano}, mes=${mes}`);
+    console.log(`[dashboard] graf-vta-mes-suc: ano=${ano}, mes=${mes}`);
 
-    // NOTA: En LaTorre la columna es 'Id# Sucursal'.
     const sql = 'SELECT * FROM "Graf_VtaMes_Suc"(?, ?)';
     const rows = await query<Record<string, unknown>>(sql, [ano, mes], dbConfig);
 
-    // eslint-disable-next-line no-console
-    console.log(`✅ [BACKEND] Retrieved ${rows.length} rows from Graf_VtaMes_Suc`);
+    console.log(`[dashboard] graf-vta-mes-suc: retrieved ${rows.length} rows`);
     if (rows.length > 0) {
-      console.log(`📋 [BACKEND] Sample row:`, JSON.stringify(rows[0], null, 2));
+      console.log('[dashboard] graf-vta-mes-suc sample row:', JSON.stringify(rows[0], null, 2));
     }
 
-    // Devolver las filas crudas tal como las espera el frontend
     res.json({
       success: true,
       data: rows,
     });
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('❌ [BACKEND] Error en graf vta mes suc:', error);
+    console.error('[dashboard] error in graf-vta-mes-suc:', error);
     next(error);
   }
 });
 
-// Ventas Anuales - Tabla _ProyVentaAnual
+// Annual sales table from _ProyVentaAnual (with SP-missing fallback)
 router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const cantAnos = parseNumber(toString(req.query.cantAnos), 3);
 
-    // eslint-disable-next-line no-console
-    console.log(`📊 [BACKEND] Ventas Anuales Tabla: cantAnos=${cantAnos}`);
+    console.log(`[dashboard] ventas-anuales-tabla: cantAnos=${cantAnos}`);
 
     try {
       const sql = 'SELECT * FROM "_ProyVentaAnual"(?)';
@@ -1362,64 +1188,27 @@ router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
 
       const normalizedRows = rows.map(normalizeRow);
 
-      // eslint-disable-next-line no-console
-      console.log(`✅ [BACKEND] ${normalizedRows.length} registros encontrados`);
+      console.log(`[dashboard] ventas-anuales-tabla: ${normalizedRows.length} rows found`);
 
       res.json({
         success: true,
         data: normalizedRows,
       });
     } catch (procError) {
-      // Si el procedimiento no existe, generar datos de ejemplo
-      // eslint-disable-next-line no-console
-      console.warn('⚠️ [BACKEND] Procedimiento no encontrado, usando datos de ejemplo');
-      
-      const currentYear = new Date().getFullYear();
-      const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-      const data = [];
-
-      for (let y = 0; y < cantAnos; y++) {
-        const year = currentYear - cantAnos + y + 1;
-        for (let m = 0; m < 12; m++) {
-          data.push({
-            ano: year,
-            mes: m + 1,
-            mes_nombre: meses[m],
-            sucursal: 'Centro',
-            total: Math.round((50000 + Math.random() * 30000) * 100) / 100,
-            tipo_documento: 'Boleta',
-          });
-          data.push({
-            ano: year,
-            mes: m + 1,
-            mes_nombre: meses[m],
-            sucursal: 'Norte',
-            total: Math.round((40000 + Math.random() * 25000) * 100) / 100,
-            tipo_documento: 'Boleta',
-          });
-          data.push({
-            ano: year,
-            mes: m + 1,
-            mes_nombre: meses[m],
-            sucursal: 'Sur',
-            total: Math.round((35000 + Math.random() * 20000) * 100) / 100,
-            tipo_documento: 'Boleta',
-          });
-        }
-      }
+      console.warn('[dashboard] ventas-anuales-tabla: stored procedure not found, returning empty data');
 
       res.json({
         success: true,
-        data,
+        data: [],
       });
     }
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('❌ [BACKEND] Error en ventas anuales tabla:', error);
+    console.error('[dashboard] error in ventas-anuales-tabla:', error);
     next(error);
   }
 });
 
+// Multi-year annual sales projection (_ProyVentaAnual with configurable years)
 router.get('/dashboard/proy-venta-anual', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -1431,8 +1220,7 @@ router.get('/dashboard/proy-venta-anual', async (req, res, next) => {
       data: filteredRows,
     });
   } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('❌ [BACKEND] Error en proy-venta-anual:', error);
+    console.error('[dashboard] error in proy-venta-anual:', error);
     next(error);
   }
 });

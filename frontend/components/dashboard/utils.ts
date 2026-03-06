@@ -1,3 +1,17 @@
+/**
+ * utils.ts — Utilidades de formato y fechas para el frontend.
+ *
+ * Funciones de formato:
+ *  - formatDateInput / formatDateDisplay: formatos YYYY-MM-DD y DD-MM-YYYY
+ *  - formatCurrency: formato de moneda (sin decimales)
+ *  - formatCompact: abreviatura K/M/B para cifras grandes
+ *  - formatNumberExact: con 2 decimales
+ *
+ * Funciones de fecha:
+ *  - addDays, startOfMonth, endOfMonth, startOfWeek
+ *  - sparsifyLabels: reduce la cantidad de etiquetas en ejes de gráficos
+ */
+
 export const formatDateInput = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');

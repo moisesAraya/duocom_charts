@@ -1,3 +1,18 @@
+/**
+ * ventas.tsx — Pestaña de Ventas del dashboard.
+ *
+ * Muestra los siguientes gráficos / tarjetas:
+ *  - Análisis de ventas mensual por sucursal (líneas, datos de Graf_VtaMes_Suc)
+ *  - Ventas anuales por sucursal (barras horizontales apiladas)
+ *  - Ventas por medio de pago (barras horizontales)
+ *  - Ventas por grupo de producto (barra horizontal simple)
+ *  - Resumen diario de ventas (línea con KPIs)
+ *  - Detalle de ventas por transacción (tabla scrollable)
+ *
+ * Los datos se cargan desde la API REST autenticada por JWT.
+ * Soporta filtros de fecha y sucursal desde el contexto compartido.
+ */
+
 // app/(tabs)/ventas.tsx
 import { api } from "@/constants/api";
 import { ChartCard } from "@/components/dashboard/chart-card";

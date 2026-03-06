@@ -1,12 +1,33 @@
+/**
+ * auth.ts — Rutas de autenticación.
+ *
+ * POST /validar-rut  → Valida que un RUT exista como cliente activo
+ *                       en la BD central y devuelve su configuración.
+ * POST /login        → Autentica al usuario y genera un token JWT
+ *                       con la información del cliente embebida.
+ *
+ * El flujo completo de login es:
+ *  1. El frontend envía el RUT → validar-rut responde con ip, puerto, bdAlias.
+ *  2. El frontend envía usuario + contraseña + config del paso 1.
+ *  3. /login genera un JWT que contiene los datos de conexión del cliente.
+ *  4. Todas las peticiones subsiguientes llevan ese JWT.
+ */
+
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import type { FirebirdConnectionConfig } from '../db/firebird';
 import { executeQuery } from '../db/firebirdPool';
 import { apiKeyMiddleware } from '../middleware/apiKey';
+import { readField, parseRutNumber } from '../helpers/db-helpers';
 
 const router = Router();
 
+/* ═══════════════════════════════════════════
+   Tipos
+═══════════════════════════════════════════ */
+
+/** Configuración de un cliente obtenida de la BD central */
 type ClienteConfig = {
   rut: string;
   razonSocial: string;
@@ -18,55 +39,34 @@ type ClienteConfig = {
   url3: string;
 };
 
-const readField = (row: Record<string, unknown>, key: string): string => {
-  const direct = row[key];
-  if (direct !== undefined && direct !== null) return String(direct);
-  const upper = row[key.toUpperCase()];
-  if (upper !== undefined && upper !== null) return String(upper);
-  const lower = row[key.toLowerCase()];
-  if (lower !== undefined && lower !== null) return String(lower);
-  return '';
-};
+/* ═══════════════════════════════════════════
+   Funciones auxiliares
+═══════════════════════════════════════════ */
 
-const parseRutNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const normalized = value.replace(/[^\d]/g, '');
-    const parsed = Number.parseInt(normalized, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
+/** Parsea un string a entero con valor por defecto. */
 const parseNumber = (value: string, fallback: number): number => {
   const parsed = Number.parseInt(value.trim(), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+/** Construye un ClienteConfig a partir de un row crudo de la BD central. */
 const buildClienteConfig = (row: Record<string, unknown>): ClienteConfig => {
-  const rut = readField(row, 'RUT');
-  const razonSocial = readField(row, 'RZ');
-  const ip = readField(row, 'IP');
-  // Usar config.firebird.port si no hay valor en la base
   const puertoRaw = readField(row, 'PUERTO');
-  const puerto = puertoRaw && puertoRaw.trim() !== '' ? Number.parseInt(puertoRaw, 10) : config.firebird.port;
-  const bdAlias = readField(row, 'DBALIAS') || readField(row, 'BDALIAS');
-  const url1 = readField(row, 'URL1');
-  const url2 = readField(row, 'URL2');
-  const url3 = readField(row, 'URL3');
-
   return {
-    rut,
-    razonSocial,
-    ip,
-    puerto,
-    bdAlias,
-    url1,
-    url2,
-    url3,
+    rut: readField(row, 'RUT'),
+    razonSocial: readField(row, 'RZ'),
+    ip: readField(row, 'IP'),
+    puerto: puertoRaw && puertoRaw.trim() !== ''
+      ? Number.parseInt(puertoRaw, 10)
+      : config.firebird.port,
+    bdAlias: readField(row, 'DBALIAS') || readField(row, 'BDALIAS'),
+    url1: readField(row, 'URL1'),
+    url2: readField(row, 'URL2'),
+    url3: readField(row, 'URL3'),
   };
 };
 
+/** Construye la config de conexión a Firebird a partir de un ClienteConfig. */
 const buildClienteDbConfig = (
   cliente: ClienteConfig
 ): FirebirdConnectionConfig => ({
@@ -78,6 +78,7 @@ const buildClienteDbConfig = (
   client: config.firebird.client ?? undefined,
 });
 
+/** Busca un cliente activo por RUT en la BD central (DUOCOMAPPS). */
 const fetchClienteByRut = async (
   rutNumber: number
 ): Promise<Record<string, unknown> | null> => {
@@ -97,6 +98,15 @@ const fetchClienteByRut = async (
   return rows[0] ?? null;
 };
 
+/* ═══════════════════════════════════════════
+   Rutas
+═══════════════════════════════════════════ */
+
+/**
+ * POST /validar-rut
+ * Recibe { rut } en el body y valida que exista como cliente activo.
+ * Responde con la configuración del cliente (IP, puerto, BD).
+ */
 router.post('/validar-rut', apiKeyMiddleware, async (req, res, next) => {
   try {
     const rutNumber = parseRutNumber(req.body?.rut);
@@ -105,13 +115,11 @@ router.post('/validar-rut', apiKeyMiddleware, async (req, res, next) => {
       return;
     }
 
-    // eslint-disable-next-line no-console
-    console.log(`🔍 [BACKEND] Validando RUT ${rutNumber}`);
+    console.log(`[auth] Validando RUT ${rutNumber}`);
     const clienteRow = await fetchClienteByRut(rutNumber);
 
     if (!clienteRow) {
-      // eslint-disable-next-line no-console
-      console.log('❌ [BACKEND] RUT no encontrado');
+      console.log('[auth] RUT no encontrado');
       res
         .status(401)
         .json({ success: false, error: 'RUT invalido o empresa inactiva' });
@@ -119,14 +127,22 @@ router.post('/validar-rut', apiKeyMiddleware, async (req, res, next) => {
     }
 
     const cliente = buildClienteConfig(clienteRow);
-    // eslint-disable-next-line no-console
-    console.log('✅ [BACKEND] RUT validado');
+    console.log('[auth] RUT validado');
     res.json({ success: true, data: cliente });
   } catch (error) {
     next(error);
   }
 });
 
+/**
+ * POST /login
+ * Recibe { username, password } en el body y el header x-cliente-config
+ * con la configuración del cliente (obtenida de validar-rut).
+ * Genera un JWT con los datos del cliente embebidos.
+ *
+ * TODO: Implementar autenticación real contra la BD del cliente.
+ *       Actualmente acepta cualquier usuario/contraseña.
+ */
 router.post('/login', apiKeyMiddleware, async (req, res, next) => {
   try {
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
@@ -137,14 +153,14 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
       return;
     }
 
-    // Parse cliente config from header
+    // Leer la config del cliente desde el header
     let clienteConfig: ClienteConfig | null = null;
     const clienteConfigHeader = req.headers['x-cliente-config'] as string;
     if (clienteConfigHeader) {
       try {
         clienteConfig = JSON.parse(clienteConfigHeader);
       } catch (error) {
-        console.error('Error parsing cliente config:', error);
+        console.error('[auth] Error parsing cliente config:', error);
       }
     }
 
@@ -153,19 +169,18 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
       return;
     }
 
-    // Build database path
+    // Ruta completa a la BD del cliente
     const dbPath = `C:\\DuoCOM\\BDatos\\${clienteConfig.bdAlias}.Fdb`;
 
-    // For now, accept any username/password and return the cliente config
-    // TODO: Implement actual authentication against the client's database
-    console.log(`🔍 [BACKEND] Login para usuario ${username} en BD: ${dbPath}`);
+    console.log(`[auth] Login para usuario ${username} en BD: ${dbPath}`);
 
-    const token = jwt.sign({ 
+    // Generar JWT con la info del cliente embebida
+    const token = jwt.sign({
       razonSocial: clienteConfig.razonSocial,
       rut: clienteConfig.rut,
       ip: clienteConfig.ip,
       puerto: clienteConfig.puerto,
-      bdAlias: clienteConfig.bdAlias
+      bdAlias: clienteConfig.bdAlias,
     }, config.jwtSecret, {
       expiresIn: config.jwtExpiresIn as any,
     });
@@ -174,13 +189,13 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
       success: true,
       data: {
         id: 1,
-        username: username,
+        username,
         nombre: username,
         rol: 'admin',
-        token: token,
+        token,
         cliente: {
           ...clienteConfig,
-          bdAlias: dbPath, // Use full path
+          bdAlias: dbPath,
           user: config.firebird.user,
           clave: config.firebird.password,
         },

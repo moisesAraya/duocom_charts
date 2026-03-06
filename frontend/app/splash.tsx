@@ -1,3 +1,11 @@
+/**
+ * splash.tsx — Pantalla de carga inicial (splash real).
+ *
+ * Verifica si la app se cerró completamente (no quedó en background).
+ * Si se cerró, limpia la sesión y redirige a login.
+ * Si había sesión válida, redirige directamente a (tabs)/ventas.
+ */
+
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';

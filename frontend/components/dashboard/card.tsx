@@ -1,3 +1,10 @@
+/**
+ * card.tsx — Componentes base de tarjeta para el dashboard.
+ *
+ * - Card: contenedor blanco con sombra, título y subtítulo.
+ * - EmptyState: texto gris para cuando no hay datos.
+ */
+
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
