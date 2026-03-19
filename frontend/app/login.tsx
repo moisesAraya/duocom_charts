@@ -2,12 +2,10 @@
  * login.tsx — Pantalla de inicio de sesión.
  *
  * Flujo de autenticación:
- *  1. El usuario ingresa su RUT (identificador tributario de la empresa).
- *  2. Al escribir 8+ dígitos se valida automáticamente contra /api/validar-rut.
- *     - Si el RUT existe, se obtiene la configuración del cliente (razón social, BD, etc.).
- *  3. El usuario ingresa usuario y contraseña.
- *  4. Se envía POST a /api/login con las credenciales + config del cliente.
- *  5. Si el login es exitoso se guarda el token JWT y se navega a la app.
+ *  1. La empresa ya fue configurada previamente con token (pantalla config-token).
+ *  2. El usuario solo ingresa usuario y contraseña.
+ *  3. Se envía POST a /api/login con x-cliente-config en headers.
+ *  4. Si el login es exitoso se guarda el token JWT y se navega a la app.
  */
 
 import React, { useState, useRef, useEffect } from "react";
@@ -34,11 +32,12 @@ import {
   setUsuarioActual,
   getAuthHeaders,
   hayUsuarioLogueado,
-  setBackendUrl,
-  esUsuarioAdmin,
   setClienteConfig,
 } from "@/utils/config";
-import { API_CONFIG } from "@/constants/api";
+import {
+  getClienteConfig as getEmpresaConfig,
+  clearEmpresaToken,
+} from "@/utils/empresa-storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
@@ -57,8 +56,7 @@ const safeJsonFromResponse = async <T = any>(response: Response): Promise<T | nu
 export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [rut, setRut] = useState("");
-  const [rutValidado, setRutValidado] = useState(false);
+  const [empresaConfigCargada, setEmpresaConfigCargada] = useState(false);
   const [razonSocial, setRazonSocial] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -71,83 +69,28 @@ export default function LoginScreen() {
         // Comentado para forzar el login cada vez
         // router.replace(esUsuarioAdmin(json.data) ? "/admin-tabs" : "/user-tabs");
       }
+
+      // Si hay empresa configurada, cargar su config automáticamente
+      const empresaConfig = await getEmpresaConfig();
+      if (empresaConfig) {
+        console.log('[Login] Empresa configurada encontrada:', empresaConfig.razonSocial);
+        setEmpresaConfigCargada(true);
+        setRazonSocial(empresaConfig.razonSocial);
+        await setClienteConfig(empresaConfig);
+      } else {
+        Alert.alert(
+          "Empresa no configurada",
+          "Debe ingresar el token de empresa antes de iniciar sesión.",
+          [{ text: "Ir a configurar", onPress: () => router.replace('/config-token') }]
+        );
+      }
     };
     checkIfLoggedIn();
   }, []);
 
-  useEffect(() => {
-    if (rut.length >= 8) {
-      validarRutAutomatico();
-    } else {
-      setRutValidado(false);
-    }
-  }, [rut]);
-
-  const validarRutAutomatico = async () => {
-    try {
-      const API_URL = stripTrailingSlash(await getBackendUrl());
-      // Enviar RUT al backend para validar que existe en la BD central
-      const response = await fetch(`${API_URL}/api/validar-rut`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": API_CONFIG.API_KEY,
-        },
-        body: JSON.stringify({ rut }),
-      });
-      const json = await safeJsonFromResponse<{ success?: boolean; data?: any }>(response);
-      if (response.ok && json?.success) {
-        setRutValidado(true);
-        await setClienteConfig(json.data);
-        setRazonSocial(json.data?.razonSocial ?? "");
-      } else {
-        setRutValidado(false);
-      }
-    } catch (error) {
-      console.error("[login] Error validando RUT:", error);
-      setRutValidado(false);
-    }
-  };
-
-  const validarRutManual = async () => {
-    if (!rut.trim()) {
-      Alert.alert("Error", "Por favor ingrese un RUT");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const API_URL = stripTrailingSlash(await getBackendUrl());
-      // Re-validar RUT antes de enviar login
-      const response = await fetch(`${API_URL}/api/validar-rut`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": API_CONFIG.API_KEY,
-        },
-        body: JSON.stringify({ rut }),
-      });
-      const json = await safeJsonFromResponse<{ success?: boolean; data?: any; error?: string }>(response);
-      if (response.ok && json?.success) {
-        setRutValidado(true);
-        await setClienteConfig(json.data);
-        setRazonSocial(json.data?.razonSocial ?? "");
-      } else {
-        setRutValidado(false);
-        Alert.alert("RUT Inválido", json?.error || "RUT no encontrado o respuesta no valida del servidor");
-      }
-    } catch (error) {
-      console.error("Error validando RUT:", error);
-      setRutValidado(false);
-      Alert.alert("Error de Conexión", "No se pudo conectar con el servidor. Verifique su conexión.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleLogin = async () => {
-    if (!rutValidado) {
-      Alert.alert("Error", "Por favor ingrese un RUT válido");
+    if (!empresaConfigCargada) {
+      Alert.alert("Error", "Debe configurar la empresa con token antes de iniciar sesión");
       return;
     }
     if (!username.trim()) {
@@ -162,39 +105,31 @@ export default function LoginScreen() {
     try {
       setLoading(true);
       const API_URL = stripTrailingSlash(await getBackendUrl());
-      console.log("[login] URL obtenida de config:", API_URL);
+      const empresaConfig = await getEmpresaConfig();
 
-      const validarResponse = await fetch(`${API_URL}/api/validar-rut`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": "Duocom2025SecretKey!@#",
-        },
-        body: JSON.stringify({ rut }),
-      });
-      const validarJson = await safeJsonFromResponse<{ success?: boolean; data?: any; error?: string }>(validarResponse);
-      if (!validarResponse.ok || !validarJson?.success) {
-        Alert.alert("Error", validarJson?.error || "RUT no válido o respuesta no valida del servidor");
+      if (!empresaConfig) {
+        Alert.alert("Error", "No se encontró configuración de empresa. Configure token nuevamente.");
+        router.replace('/config-token');
         return;
       }
-      const clienteConfig = validarJson.data;
-      console.log("[login] Config obtenida:", clienteConfig.razonSocial);
+
+      console.log("[login] URL obtenida de config:", API_URL);
 
       // Enviar credenciales al endpoint de login
       let json = null;
       try {
+        const authHeaders = await getAuthHeaders();
         console.log("[login] Intentando conectar a:", `${API_URL}/api/login`);
         const response = await fetch(`${API_URL}/api/login`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": API_CONFIG.API_KEY,
-            "x-cliente-config": JSON.stringify(clienteConfig),
+            ...authHeaders,
+            "x-cliente-config": JSON.stringify(empresaConfig),
           },
           body: JSON.stringify({
             username: username.trim(),
             password: password,
-            rut: rut,
           }),
         });
         console.log("[login] Respuesta recibida:", response.status);
@@ -269,39 +204,17 @@ export default function LoginScreen() {
               </View>
 
               <View style={styles.form}>
-                <View style={styles.inputGroup}>
-                  <View style={styles.inputIconContainer}>
-                    <Ionicons name="card" size={20} color="#fff" />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="RUT Empresa"
-                      placeholderTextColor="#ccc"
-                      value={rut}
-                      onChangeText={(text) => setRut(text.replace(/\D/g, ''))}
-                      keyboardType="numeric"
-                      maxLength={9}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!loading}
-                      returnKeyType="next"
-                    />
-                    <TouchableOpacity
-                      style={[styles.validateButtonSmall, rutValidado && styles.validateButtonSmallSuccess]}
-                      onPress={validarRutManual}
-                      disabled={loading || rut.length < 8}
-                    >
-                      <Ionicons
-                        name={rutValidado ? "checkmark-circle" : "search"}
-                        size={16}
-                        color="white"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
                 {razonSocial ? (
                   <View style={styles.companyInfo}>
                     <Text style={styles.companyText}>Bienvenido {razonSocial}</Text>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        await clearEmpresaToken();
+                        router.replace('/config-token');
+                      }}
+                    >
+                      <Text style={styles.changeCompanyText}>Cambiar empresa</Text>
+                    </TouchableOpacity>
                   </View>
                 ) : null}
 
@@ -309,14 +222,14 @@ export default function LoginScreen() {
                   <View style={styles.inputIconContainer}>
                     <Ionicons name="person" size={20} color="#fff" />
                     <TextInput
-                      style={[styles.input, !rutValidado && styles.inputDisabled]}
+                      style={[styles.input, !empresaConfigCargada && styles.inputDisabled]}
                       placeholder="Usuario"
                       placeholderTextColor="#ccc"
                       value={username}
                       onChangeText={setUsername}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      editable={!loading && rutValidado}
+                      editable={!loading && empresaConfigCargada}
                       returnKeyType="next"
                       onSubmitEditing={() => {
                         passwordInputRef?.current?.focus();
@@ -330,7 +243,7 @@ export default function LoginScreen() {
                     <Ionicons name="lock-closed" size={20} color="#fff" />
                     <TextInput
                       ref={passwordInputRef}
-                      style={[styles.input, !rutValidado && styles.inputDisabled]}
+                      style={[styles.input, !empresaConfigCargada && styles.inputDisabled]}
                       placeholder="Contraseña"
                       placeholderTextColor="#ccc"
                       value={password}
@@ -338,7 +251,7 @@ export default function LoginScreen() {
                       secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       autoCorrect={false}
-                      editable={!loading && rutValidado}
+                      editable={!loading && empresaConfigCargada}
                       returnKeyType="done"
                       onSubmitEditing={handleLogin}
                     />
@@ -351,10 +264,10 @@ export default function LoginScreen() {
                 <TouchableOpacity
                   style={[
                     styles.loginButton,
-                    (loading || !rutValidado) && styles.loginButtonDisabled,
+                    (loading || !empresaConfigCargada) && styles.loginButtonDisabled,
                   ]}
                   onPress={handleLogin}
-                  disabled={loading || !rutValidado}
+                  disabled={loading || !empresaConfigCargada}
                 >
                   {loading ? (
                     <ActivityIndicator color="#fff" />
@@ -436,18 +349,6 @@ const styles = StyleSheet.create({
   inputDisabled: {
     opacity: 0.5,
   },
-  validateButtonSmall: {
-    backgroundColor: "#F97316",
-    borderRadius: 8,
-    width: 32,
-    height: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-  validateButtonSmallSuccess: {
-    backgroundColor: "#F97316",
-  },
   eyeIcon: {
     padding: 4,
   },
@@ -478,5 +379,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  changeCompanyText: {
+    color: "#FDBA74",
+    fontSize: 14,
+    marginTop: 6,
+    textDecorationLine: 'underline',
   },
 });

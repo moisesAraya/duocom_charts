@@ -1,20 +1,31 @@
 /**
  * check-auth.tsx — Pantalla intermedia de verificación de autenticación.
  *
- * Similar a splash.tsx pero sin la lógica de cierre completo.
- * Comprueba si existe usuario logueado en AsyncStorage,
- * si sí redirige a tabs, si no redirige a login.
+ * Flujo:
+ * 1. Si hay usuario logueado y config válida -> ir a tabs (ventas)
+ * 2. Si hay token empresa y se puede inicializar -> ir a login
+ * 3. Si no hay token empresa -> ir a config-token (ingreso de token)
+ * 4. Si hay error -> ir a config-token con opción de reintentar
  */
 
 import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRootNavigationState, useRouter } from 'expo-router';
-import { getUsuarioActual, getClienteConfig, logout } from '@/utils/config';
+import {
+  getUsuarioActual,
+  getClienteConfig,
+  logout,
+} from '@/utils/config';
+import {
+  hayTokenEmpresa,
+  inicializarConfigDesdeToken,
+} from '@/utils/empresa-storage';
 
-export default function SplashScreen() {
+export default function CheckAuthScreen() {
   const router = useRouter();
   const rootNavState = useRootNavigationState();
+  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
     // Espera a que el root layout/navigator esté montado
@@ -22,25 +33,46 @@ export default function SplashScreen() {
 
     const checkTokenAndRedirect = async () => {
       try {
-        // Si aquí de verdad quieres validar token/config, hazlo acá.
-        // Ejemplo típico: usuario logeado => / (tabs), sino => /login
+        console.log('[CheckAuth] Iniciando verificación...');
 
+        // 1. Verificar si ya hay usuario logueado con config válida
         const usuario = await getUsuarioActual();
+        const clienteConfig = await getClienteConfig();
 
-        // (Opcional) Si tu config puede fallar, lo envuelves con try/catch
-        // const cfg = await getClienteConfig();
-
-        if (usuario) {
-          router.replace('/(tabs)/ventas'); // ir a la pantalla principal de ventas
-        } else {
-          router.replace('/login');
+        if (usuario && clienteConfig) {
+          console.log('[CheckAuth] Usuario logueado encontrado, ir a ventas');
+          router.replace('/(tabs)/ventas');
+          return;
         }
-      } catch (e) {
-        // ante error, manda a login (o haz logout si aplica)
+
+        // 2. Verificar si hay token de empresa
+        const tieneToken = await hayTokenEmpresa();
+        console.log('[CheckAuth] ¿Tiene token empresa?', tieneToken);
+
+        if (tieneToken) {
+          // Intentar inicializar config desde token
+          console.log('[CheckAuth] Inicializando config desde token...');
+          const config = await inicializarConfigDesdeToken();
+
+          if (config) {
+            console.log('[CheckAuth] Config inicializada exitosamente, ir a login');
+            router.replace('/login');
+            return;
+          }
+        }
+
+        // 3. No hay token válido, ir a configuración de token
+        console.log('[CheckAuth] No hay token válido, ir a config-token');
+        router.replace('/config-token');
+      } catch (error) {
+        console.error('[CheckAuth] Error durante verificación:', error);
         try {
           await logout?.();
         } catch {}
-        router.replace('/login');
+        // Ir a pantalla de configuración de token
+        router.replace('/config-token');
+      } finally {
+        setIsChecking(false);
       }
     };
 
@@ -49,97 +81,50 @@ export default function SplashScreen() {
 
   return (
     <LinearGradient
-      colors={['#0B1F3A', '#F97316']}
-      style={styles.splashContainer}
+      colors={['#667eea', '#764ba2']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
+      style={styles.container}
     >
-      <View style={styles.splashContent}>
+      <View style={styles.content}>
         <Image
           source={require('../assets/images/img.png')}
           style={styles.logo}
           resizeMode="contain"
         />
-        <Text style={styles.splashTitulo}>DuoCom Charts</Text>
-        <Text style={styles.splashSubtitulo}>Sistema de visualización de estadísticas</Text>
-        <View style={styles.splashDivider} />
-        <EmpresaNombreDinamico />
-        <Text style={styles.splashSlogan}>Servicios integrales en Informática</Text>
+        {isChecking && (
+          <>
+            <Text style={styles.title}>Iniciando sesión...</Text>
+            <Text style={styles.subtitle}>Por favor espere</Text>
+          </>
+        )}
       </View>
     </LinearGradient>
   );
 }
 
-function EmpresaNombreDinamico() {
-  const [nombre, setNombre] = useState('');
-
-  useEffect(() => {
-    let alive = true;
-    getClienteConfig()
-      .then(cfg => {
-        if (!alive) return;
-        setNombre(cfg?.razonSocial || cfg?.nombreFantasia || '');
-      })
-      .catch(() => {
-        if (!alive) return;
-        setNombre('');
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  return <Text style={styles.splashEmpresa}>{nombre || ' '}</Text>;
-}
-
 const styles = StyleSheet.create({
-  splashContainer: {
+  container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  splashContent: {
+  content: {
     alignItems: 'center',
-    paddingHorizontal: 20,
   },
   logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 10,
+    width: 100,
+    height: 100,
+    marginBottom: 20,
   },
-  splashTitulo: {
-    fontSize: 36,
+  title: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: 'white',
-    marginBottom: 6,
-    letterSpacing: 2,
-    textAlign: 'center',
+    marginBottom: 8,
   },
-  splashSubtitulo: {
-    fontSize: 16,
-    color: 'white',
-    opacity: 0.9,
-    marginBottom: 20,
-  },
-  splashDivider: {
-    width: 50,
-    height: 2,
-    backgroundColor: '#FDBA74',
-    marginBottom: 20,
-    opacity: 0.8,
-    borderRadius: 1,
-  },
-  splashEmpresa: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: 'white',
-    marginBottom: 3,
-  },
-  splashSlogan: {
-    fontSize: 12,
-    color: 'white',
-    opacity: 0.8,
-    textAlign: 'center',
+  subtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
   },
 });

@@ -98,6 +98,33 @@ const fetchClienteByRut = async (
   return rows[0] ?? null;
 };
 
+/** Busca un cliente activo por TOKEN en la BD central (DUOCOMAPPS). */
+const fetchClienteByToken = async (
+  token: string
+): Promise<Record<string, unknown> | null> => {
+  const dbConfig: FirebirdConnectionConfig = {
+    host: config.firebird.host || 'localhost',
+    port: config.firebird.port,
+    database: config.firebird.database,
+    user: config.firebird.user,
+    password: config.firebird.password,
+    client: config.firebird.client ?? undefined,
+  };
+  
+  // Buscar por campo TOKEN si existe
+  try {
+    const rows = await executeQuery<Record<string, unknown>>(
+      dbConfig,
+      'SELECT * FROM "Clientes" WHERE "TOKEN" = ? AND "ESTADO" = 1',
+      [token]
+    );
+    return rows[0] ?? null;
+  } catch (error) {
+    console.log('[auth] Campo TOKEN no disponible, intentando fallback por RUT');
+    return null;
+  }
+};
+
 /* ═══════════════════════════════════════════
    Rutas
 ═══════════════════════════════════════════ */
@@ -133,6 +160,86 @@ router.post('/validar-rut', apiKeyMiddleware, async (req, res, next) => {
     next(error);
   }
 });
+
+/**
+ * POST /validar-token
+ * Recibe { token } en el body y valida que exista como empresa activa.
+ * Responde con la configuración de conexión de esa empresa.
+ * 
+ * Validaciones:
+ *  - token obligatorio
+ *  - longitud mínima 8
+ *  - empresa activa (ESTADO = 1)
+ * 
+ * Respuesta éxito (200):
+ *  {
+ *    "success": true,
+ *    "data": {
+ *      "razonSocial": "...",
+ *      "ip": "...",
+ *      "puerto": 3050,
+ *      "bdAlias": "...",
+ *      "user": "SYSDBA",
+ *      "clave": "masterkey",
+ *      "url1": "...",
+ *      "url2": "...",
+ *      "url3": "..."
+ *    }
+ *  }
+ * 
+ * Respuesta error:
+ *  - 400: token inválido o longitud insuficiente
+ *  - 404: token no encontrado o empresa inactiva
+ *  - 500: error servidor
+ */
+router.post('/validar-token', async (req, res, next) => {
+  try {
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    
+    // Validación: token obligatorio y longitud mínima
+    if (!token) {
+      res.status(400).json({ success: false, error: 'Token requerido' });
+      return;
+    }
+    
+    if (token.length < 8) {
+      res.status(400).json({ success: false, error: 'Token debe tener mínimo 8 caracteres' });
+      return;
+    }
+
+    console.log(`[auth] Validando token de empresa`);
+    
+    // Intentar buscar por TOKEN primero
+    let clienteRow = await fetchClienteByToken(token);
+    
+    if (!clienteRow) {
+      console.log('[auth] Token no encontrado');
+      res.status(404).json({ success: false, error: 'Token inválido o empresa inactiva' });
+      return;
+    }
+
+    const cliente = buildClienteConfig(clienteRow);
+    
+    // Preparar respuesta con datos sensibles para el cliente
+    const responseData = {
+      razonSocial: cliente.razonSocial,
+      ip: cliente.ip,
+      puerto: cliente.puerto,
+      bdAlias: cliente.bdAlias,
+      user: config.firebird.user,
+      clave: config.firebird.password,
+      url1: cliente.url1,
+      url2: cliente.url2,
+      url3: cliente.url3,
+    };
+    
+    console.log(`[auth] Token validado para empresa: ${cliente.razonSocial}`);
+    res.json({ success: true, data: responseData });
+  } catch (error) {
+    next(error);
+  }
+});
+
 
 /**
  * POST /login

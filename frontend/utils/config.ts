@@ -14,14 +14,24 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG, api, getApiKeyHeader, setAuthToken } from '@/constants/api';
+import { 
+  clearEmpresaToken, 
+  getEmpresaAuthHeaders 
+} from './empresa-storage';
 
 /**
  * Returns the current authentication headers for API requests.
- * You may want to adjust this implementation to match your authentication logic.
+ * Incluye: Authorization (JWT), x-api-key, x-cliente-config (si existe empresa configurada)
  */
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const token = await AsyncStorage.getItem(STORAGE_KEYS.token);
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: Record<string, string> = token 
+    ? { Authorization: `Bearer ${token}` } 
+    : {};
+  
+  // Agregar headers de empresa si existen
+  const empresaHeaders = await getEmpresaAuthHeaders();
+  return { ...headers, ...empresaHeaders };
 }
 
 /** Claves de AsyncStorage usadas en toda la app */
@@ -67,6 +77,7 @@ export async function getUsuarioActual(): Promise<Usuario | null> {
 
 
 export async function logout(): Promise<void> {
+  // Limpiar sesión del usuario
   await AsyncStorage.multiRemove([
     STORAGE_KEYS.USUARIO_ACTUAL,
     STORAGE_KEYS.CLIENTE_CONFIG,
@@ -76,6 +87,14 @@ export async function logout(): Promise<void> {
     STORAGE_KEYS.SESSION_TIMESTAMP,
     STORAGE_KEYS.APP_STATE,
   ]);
+  
+  // Limpiar token de empresa
+  try {
+    await clearEmpresaToken();
+  } catch (error) {
+    console.error('[config] Error limpiando token de empresa:', error);
+  }
+  
   setAuthToken(null);
 }
 
