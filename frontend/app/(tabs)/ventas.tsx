@@ -60,6 +60,45 @@ interface GrupoVentaRow {
   monto: number;
 }
 
+interface VentaTiempoRealRow {
+  fechaHora: string;
+  totalAcumulado: number;
+}
+
+const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[] => {
+  const start = new Date(now);
+  start.setHours(8, 0, 0, 0);
+
+  if (now.getTime() < start.getTime()) {
+    start.setHours(0, 0, 0, 0);
+  }
+
+  const points: VentaTiempoRealRow[] = [];
+  let cursor = new Date(start);
+  let acumulado = 0;
+  let index = 0;
+
+  while (cursor.getTime() <= now.getTime()) {
+    const base = 85_000 + (index % 6) * 12_000;
+    const wave = (Math.sin(index / 2) + 1) * 14_000;
+    acumulado += Math.round(base + wave);
+
+    points.push({
+      fechaHora: cursor.toISOString(),
+      totalAcumulado: acumulado,
+    });
+
+    cursor = new Date(cursor.getTime() + 30 * 60 * 1000);
+    index += 1;
+  }
+
+  if (!points.length) {
+    return [{ fechaHora: now.toISOString(), totalAcumulado: 0 }];
+  }
+
+  return points;
+};
+
 /* =========================
    HELPERS
 ========================= */
@@ -151,10 +190,15 @@ export default function VentasScreen() {
   const [loadingVentasAnuales, setLoadingVentasAnuales] = useState(true);
   const [loadingVentasMedioPago, setLoadingVentasMedioPago] = useState(true);
   const [loadingVentasGrupo, setLoadingVentasGrupo] = useState(true);
+  const [loadingVentasTiempoReal, setLoadingVentasTiempoReal] = useState(true);
 
   const [refreshing, setRefreshing] = useState(false);
   const [showVentasAnualesValues, setShowVentasAnualesValues] = useState(false);
   const [showVentasSucursalValues, setShowVentasSucursalValues] = useState(false);
+  const [ventasTiempoReal, setVentasTiempoReal] = useState<VentaTiempoRealRow[]>([]);
+  const [ventasTiempoRealEsMock, setVentasTiempoRealEsMock] = useState(false);
+  const [showVentasTiempoRealDetalle, setShowVentasTiempoRealDetalle] = useState(false);
+  const [ultimaConsultaTiempoReal, setUltimaConsultaTiempoReal] = useState<Date | null>(null);
 
   /* =========================
      DERIVED PARAMS
@@ -256,6 +300,35 @@ export default function VentasScreen() {
       setLoadingVentasAnuales(false);
     }
   }, [ventasAnualesParams]);
+  const loadVentasTiempoReal = useCallback(async () => {
+    setLoadingVentasTiempoReal(true);
+    try {
+      const res = await api.get('/api/dashboard/ventas-tiempo-real', {
+        params: { ...baseRequestParams, limit: 240 },
+      });
+
+      const rows = (res.data?.data ?? [])
+        .map((row: any) => ({
+          fechaHora: String(row.fechaHora || row.fecha_hora || ''),
+          totalAcumulado: toNumber(row.totalAcumulado ?? row.total_acumulado),
+        }))
+        .filter((row: VentaTiempoRealRow) => row.fechaHora);
+
+      if (rows.length > 0) {
+        setVentasTiempoReal(rows);
+        setVentasTiempoRealEsMock(false);
+      } else {
+        setVentasTiempoReal(buildMockVentasTiempoReal());
+        setVentasTiempoRealEsMock(true);
+      }
+    } catch {
+      setVentasTiempoReal(buildMockVentasTiempoReal());
+      setVentasTiempoRealEsMock(true);
+    } finally {
+      setLoadingVentasTiempoReal(false);
+      setUltimaConsultaTiempoReal(new Date());
+    }
+  }, [baseRequestParams]);
 
   useEffect(() => {
     void loadVentasGrupo();
@@ -268,6 +341,13 @@ export default function VentasScreen() {
   useEffect(() => {
     void loadVentasAnuales();
   }, [loadVentasAnuales]);
+  useEffect(() => {
+    void loadVentasTiempoReal();
+    const id = setInterval(() => {
+      void loadVentasTiempoReal();
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [loadVentasTiempoReal]);
 
   const loadAllData = useCallback(async () => {
     setRefreshing(true);
@@ -276,11 +356,74 @@ export default function VentasScreen() {
         loadVentasGrupo(),
         loadVentasMedioPago(),
         loadVentasAnuales(),
+        loadVentasTiempoReal(),
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadVentasAnuales, loadVentasGrupo, loadVentasMedioPago]);
+  }, [loadVentasAnuales, loadVentasGrupo, loadVentasMedioPago, loadVentasTiempoReal]);
+
+  const ventasTiempoRealLabels = useMemo(() => {
+    if (!ventasTiempoReal.length) return [];
+    return ventasTiempoReal.map((row) => {
+      const d = new Date(row.fechaHora);
+      return Number.isNaN(d.getTime())
+        ? ''
+        : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    });
+  }, [ventasTiempoReal]);
+
+  const ventasTiempoRealData = useMemo(
+    () => ({
+      labels: sparsifyLabels(ventasTiempoRealLabels, 6),
+      datasets: [
+        {
+          data: ventasTiempoReal.map((row) => row.totalAcumulado),
+          color: (o: number) => `rgba(16,185,129,${o})`,
+          strokeWidth: 2,
+        },
+      ],
+    }),
+    [ventasTiempoReal, ventasTiempoRealLabels],
+  );
+
+  const totalAcumuladoHoy = useMemo(
+    () => (ventasTiempoReal.length ? ventasTiempoReal[ventasTiempoReal.length - 1].totalAcumulado : 0),
+    [ventasTiempoReal],
+  );
+
+  const ultimaActualizacion = useMemo(() => {
+    if (!ventasTiempoReal.length) return '--:--';
+    const d = new Date(ventasTiempoReal[ventasTiempoReal.length - 1].fechaHora);
+    if (Number.isNaN(d.getTime())) return '--:--';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }, [ventasTiempoReal]);
+
+  const horaConsulta = useMemo(() => {
+    if (!ultimaConsultaTiempoReal) return '--:--:--';
+    return `${String(ultimaConsultaTiempoReal.getHours()).padStart(2, '0')}:${String(
+      ultimaConsultaTiempoReal.getMinutes(),
+    ).padStart(2, '0')}:${String(ultimaConsultaTiempoReal.getSeconds()).padStart(2, '0')}`;
+  }, [ultimaConsultaTiempoReal]);
+
+  const ventasTiempoRealDetalle = useMemo(() => {
+    return ventasTiempoReal
+      .map((row) => {
+        const d = new Date(row.fechaHora);
+        const hora = Number.isNaN(d.getTime())
+          ? row.fechaHora
+          : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        return {
+          fechaHora: row.fechaHora,
+          hora,
+          total: row.totalAcumulado,
+        };
+      });
+  }, [ventasTiempoReal]);
+
+  const onRefreshVentasTiempoReal = useCallback(() => {
+    void loadVentasTiempoReal();
+  }, [loadVentasTiempoReal]);
 
   /* =========================
      CHART: VENTAS POR AÑO (LINE)
@@ -464,6 +607,83 @@ export default function VentasScreen() {
 
   return (
     <ScreenShell title="Ventas" refreshing={refreshing} onRefresh={loadAllData}>
+      <ChartCard
+        title="Ventas en tiempo real"
+        headerContent={
+          <View style={styles.rtHeaderBlock}>
+            <Text style={styles.rtSubtitle}>Seguimiento del acumulado del día</Text>
+            <View style={styles.rtKpiRow}>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Acumulado del día</Text>
+                <Text style={styles.rtKpiValue}>{formatCurrency(totalAcumuladoHoy)}</Text>
+              </View>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Dato hasta</Text>
+                <Text style={styles.rtKpiValue}>{ultimaActualizacion}</Text>
+              </View>
+            </View>
+            <View style={styles.rtActionsRow}>
+              <Pressable
+                style={[styles.detailButton, styles.rtSecondaryButton]}
+                onPress={() => setShowVentasTiempoRealDetalle((prev) => !prev)}
+              >
+                <Text style={[styles.detailButtonText, styles.rtSecondaryButtonText]}>
+                  {showVentasTiempoRealDetalle ? 'Ocultar detalle' : 'Ver detalle'}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.detailButton}
+                onPress={onRefreshVentasTiempoReal}
+              >
+                <Text style={styles.detailButtonText}>
+                  Actualizar ahora
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={styles.rtUpdatedAt}>Consulta realizada: {horaConsulta}</Text>
+            {ventasTiempoRealEsMock && (
+              <Text style={styles.rtMockBadge}>Mostrando datos de prueba</Text>
+            )}
+            {showVentasTiempoRealDetalle && (
+              <View style={styles.rtDetailPanel}>
+                <Text style={styles.rtDetailTitle}>Historial completo ({ventasTiempoRealDetalle.length} registros)</Text>
+                <ScrollView
+                  style={styles.rtDetailScroll}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                >
+                  {ventasTiempoRealDetalle.map((row) => (
+                    <View key={`${row.fechaHora}-${row.total}`} style={styles.rtDetailRow}>
+                      <Text style={styles.rtDetailTime}>{row.hora}</Text>
+                      <Text style={styles.rtDetailValue}>{formatCurrency(row.total)}</Text>
+                    </View>
+                  ))}
+                  {!ventasTiempoRealDetalle.length && (
+                    <Text style={styles.rtDetailEmpty}>Sin movimientos para mostrar.</Text>
+                  )}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        }
+        data={ventasTiempoRealData}
+        kind="line"
+        colorRgb="16,185,129"
+        width={chartWidth}
+        height={260}
+        xLabel="Hora"
+        yLabel="Acumulado"
+        formatValue={formatCompact}
+        formatDetailValue={formatCurrency}
+        formatAxisValue={formatCompact}
+        scrollable
+        minWidth={Math.max(chartWidth, ventasTiempoReal.length * 42)}
+        isLoading={loadingVentasTiempoReal}
+        isEmpty={!ventasTiempoReal.length}
+        detailLabels={ventasTiempoRealLabels}
+        hideHint={true}
+      />
+
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <ChartCard
           title="Ventas por año"
@@ -1653,6 +1873,110 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 13,
     fontWeight: "600",
+  },
+  rtHeaderBlock: {
+    marginBottom: 10,
+  },
+  rtSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  rtKpiRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 6,
+  },
+  rtKpiBox: {
+    flex: 1,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    padding: 10,
+  },
+  rtKpiLabel: {
+    fontSize: 12,
+    color: "#475569",
+    marginBottom: 4,
+    fontWeight: "600",
+  },
+  rtKpiValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1E293B",
+  },
+  rtActionsRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    gap: 8,
+  },
+  rtSecondaryButton: {
+    backgroundColor: "#F0F7FF",
+    borderWidth: 1,
+    borderColor: "#3B82F6",
+  },
+  rtSecondaryButtonText: {
+    color: "#3B82F6",
+  },
+  rtUpdatedAt: {
+    marginTop: 8,
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  rtMockBadge: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    backgroundColor: "#FEF3C7",
+    color: "#92400E",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  rtDetailPanel: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  rtDetailTitle: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  rtDetailScroll: {
+    maxHeight: 220,
+  },
+  rtDetailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  rtDetailTime: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "600",
+  },
+  rtDetailValue: {
+    fontSize: 12,
+    color: "#0F172A",
+    fontWeight: "700",
+  },
+  rtDetailEmpty: {
+    fontSize: 12,
+    color: "#64748B",
+    fontStyle: "italic",
   },
 });
 

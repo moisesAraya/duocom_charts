@@ -201,11 +201,6 @@ router.post('/validar-token', async (req, res, next) => {
       res.status(400).json({ success: false, error: 'Token requerido' });
       return;
     }
-    
-    if (token.length < 8) {
-      res.status(400).json({ success: false, error: 'Token debe tener mínimo 8 caracteres' });
-      return;
-    }
 
     console.log(`[auth] Validando token de empresa`);
     
@@ -276,10 +271,9 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
       return;
     }
 
-    // Ruta completa a la BD del cliente
-    const dbPath = `C:\\DuoCOM\\BDatos\\${clienteConfig.bdAlias}.Fdb`;
-
-    console.log(`[auth] Login para usuario ${username} en BD: ${dbPath}`);
+    // Usar exactamente la configuración resuelta desde DUOCOMAPPS
+    // (IP, PUERTO, BDALIAS), sin forzar rutas locales.
+    console.log(`[auth] Login para usuario ${username} en BDALIAS: ${clienteConfig.bdAlias}`);
 
     // Generar JWT con la info del cliente embebida
     const token = jwt.sign({
@@ -302,7 +296,6 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
         token,
         cliente: {
           ...clienteConfig,
-          bdAlias: dbPath,
           user: config.firebird.user,
           clave: config.firebird.password,
         },

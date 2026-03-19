@@ -36,7 +36,6 @@ import {
 } from "@/utils/config";
 import {
   getClienteConfig as getEmpresaConfig,
-  clearEmpresaToken,
 } from "@/utils/empresa-storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -203,19 +202,17 @@ export default function LoginScreen() {
                 <Text style={styles.title}>DuoCom Charts</Text>
               </View>
 
+              {razonSocial ? (
+                <View style={styles.empresaInfo}>
+                  <Ionicons name="business" size={18} color="#F97316" />
+                  <Text style={styles.empresaText}>{razonSocial}</Text>
+                  <Text style={styles.empresaEstado}>Conectado</Text>
+                </View>
+              ) : null}
+
               <View style={styles.form}>
                 {razonSocial ? (
-                  <View style={styles.companyInfo}>
-                    <Text style={styles.companyText}>Bienvenido {razonSocial}</Text>
-                    <TouchableOpacity
-                      onPress={async () => {
-                        await clearEmpresaToken();
-                        router.replace('/config-token');
-                      }}
-                    >
-                      <Text style={styles.changeCompanyText}>Cambiar empresa</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <Text style={styles.formTitle}>Iniciar Sesión</Text>
                 ) : null}
 
                 <View style={styles.inputGroup}>
@@ -303,31 +300,66 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     justifyContent: "flex-start",
-    paddingTop: 80,
+    paddingTop: 36,
     paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingBottom: 36,
   },
   logoContainer: {
     alignItems: "center",
-    marginBottom: 48,
+    marginBottom: 22,
   },
   logo: {
-    width: 200,
-    height: 200,
-    marginBottom: 1,
+    width: 120,
+    height: 120,
+    marginBottom: 6,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "bold",
     color: "#fff",
-    marginTop: 16,
+    marginTop: 6,
     letterSpacing: 1,
+  },
+  empresaInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(249, 115, 22, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(249, 115, 22, 0.45)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 8,
+    marginBottom: 14,
+  },
+  empresaText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  empresaEstado: {
+    color: '#F97316',
+    fontSize: 13,
+    fontWeight: '700',
   },
   form: {
     width: "100%",
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 16,
+    padding: 18,
+  },
+  formTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 14,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   inputIconContainer: {
     flexDirection: "row",
@@ -359,7 +391,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
+    marginTop: 10,
     gap: 8,
   },
   loginButtonDisabled: {
@@ -369,21 +401,5 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "bold",
-  },
-  companyInfo: {
-    marginTop: 8,
-    marginBottom: 8,
-    alignItems: "center",
-  },
-  companyText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  changeCompanyText: {
-    color: "#FDBA74",
-    fontSize: 14,
-    marginTop: 6,
-    textDecorationLine: 'underline',
   },
 });

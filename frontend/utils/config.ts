@@ -134,6 +134,14 @@ export const setBackendUrl = async (url: string): Promise<void> => {
 export const getBackendUrl = async (): Promise<string> => {
   const resolved = API_CONFIG.BASE_URL.trim();
   const stored = await AsyncStorage.getItem(STORAGE_KEYS.BACKEND_URL);
+
+  // Si existe una URL guardada, usarla como fuente de verdad
+  if (stored?.trim()) {
+    api.defaults.baseURL = stored.trim();
+    return stored.trim();
+  }
+
+  // Si no existe URL guardada, inicializar con la del entorno
   if (stored?.trim() !== resolved) {
     await AsyncStorage.setItem(STORAGE_KEYS.BACKEND_URL, resolved);
   }

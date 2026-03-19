@@ -178,6 +178,68 @@ const getIsoWeekLabel = (date: Date): string => {
 const getMonthLabel = (date: Date): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
+const isMissingProcedureError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  return (
+    message.includes('procedure unknown') ||
+    message.includes('procedure not found') ||
+    message.includes('table unknown')
+  );
+};
+
+const getProyVentaAnualRows = async (
+  dbConfig: FirebirdConnectionConfig,
+  years: number
+): Promise<NormalizedRow[]> => {
+  try {
+    return await runProcedure(dbConfig, '_ProyVentaAnual', [years]);
+  } catch (error) {
+    if (!isMissingProcedureError(error)) throw error;
+
+    const end = new Date();
+    const start = new Date(end.getFullYear() - Math.max(1, years) + 1, 0, 1);
+    const rawRows = await runProcedure(dbConfig, 'zResumenVentas', [start, end], { limit: 20000 });
+    const totals = new Map<string, number>();
+
+    for (const row of rawRows) {
+      const fecha = parseUnknownDate(row.fecha);
+      if (!fecha) continue;
+      const sucursal =
+        toString(row.descripcion_sucursal) ||
+        toString(row.sucursal) ||
+        'N/A';
+      const ano = fecha.getFullYear();
+      const mes = fecha.getMonth() + 1;
+      const total = toNumber(row.total);
+      const key = `${sucursal}::${ano}::${mes}`;
+      totals.set(key, (totals.get(key) ?? 0) + total);
+    }
+
+    return Array.from(totals.entries()).map(([key, total]) => {
+      const [sucursal, anoRaw, mesRaw] = key.split('::');
+      return {
+        sucursal,
+        ano: Number(anoRaw),
+        mes: Number(mesRaw),
+        total,
+      } as NormalizedRow;
+    });
+  }
+};
+
+const getRotacionRows = async (
+  dbConfig: FirebirdConnectionConfig,
+  start: Date,
+  limit: number
+): Promise<NormalizedRow[]> => {
+  try {
+    return await runProcedure(dbConfig, '_PvtRotacion', [start], { limit });
+  } catch (error) {
+    if (isMissingProcedureError(error)) return [];
+    throw error;
+  }
+};
+
 /* ═══════════════════════════════════════════
    Rutas
 ═══════════════════════════════════════════ */
@@ -324,11 +386,7 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const years = Number.parseInt(String(req.query.years ?? '3'), 10);
     const branches = parseSucursalList(req.query.sucursal).map(normalizeBranch);
-    const rows = await runProcedure(
-      dbConfig,
-      '_ProyVentaAnual',
-      [Number.isFinite(years) ? years : 3]
-    );
+    const rows = await getProyVentaAnualRows(dbConfig, Number.isFinite(years) ? years : 3);
     const totals = new Map<string, number>();
 
 
@@ -361,9 +419,9 @@ router.get('/dashboard/resumen-mensual-ventas', async (req, res, next) => {
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 3000);
     const branches = parseSucursalList(req.query.sucursal);
-    const rows = await runProcedureWithFallbacks(
+    const rows = await runProcedureByNames(
       dbConfig,
-      'Graf VentasDiarias',
+      ['Graf VentasDiarias', 'GRAF_VENTASDIARIAS'],
       [[start, end], [start], []],
       { limit }
     );
@@ -393,7 +451,7 @@ router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
     const { end } = getDateRange(req.query as Record<string, unknown>);
     const year = Number.parseInt(String(req.query.anio ?? end.getFullYear()), 10);
     const branches = parseSucursalList(req.query.sucursal);
-    const rows = await runProcedure(dbConfig, '_ProyVentaAnual', [5]);
+    const rows = await getProyVentaAnualRows(dbConfig, 5);
     const totals = new Map<string, number>();
 
 
@@ -523,7 +581,7 @@ router.get('/dashboard/productos-rotacion', async (req, res, next) => {
     const { start } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
     const branches = parseSucursalList(req.query.sucursal);
-    const rows = await runProcedure(dbConfig, '_PvtRotaci\u00f3n', [start], { limit });
+    const rows = await getRotacionRows(dbConfig, start, limit);
     const totals = new Map<string, number>();
 
     for (const row of rows) {
@@ -552,7 +610,7 @@ router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
     const { start } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
     const branches = parseSucursalList(req.query.sucursal);
-    const rows = await runProcedure(dbConfig, '_PvtRotaci\u00f3n', [start], { limit });
+    const rows = await getRotacionRows(dbConfig, start, limit);
     const totals = new Map<string, number>();
 
     for (const row of rows) {
@@ -885,9 +943,9 @@ router.get('/dashboard/proyeccion-ventas-mes', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 3000);
-    const rows = await runProcedureWithFallbacks(
+    const rows = await runProcedureByNames(
       dbConfig,
-      'Graf VentasDiarias',
+      ['Graf VentasDiarias', 'GRAF_VENTASDIARIAS'],
       [[start, end], [start], []],
       { limit }
     );
@@ -930,9 +988,9 @@ router.get('/dashboard/proyeccion-iva', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 3000);
-    const rows = await runProcedureWithFallbacks(
+    const rows = await runProcedureByNames(
       dbConfig,
-      'Graf VentasDiarias',
+      ['Graf VentasDiarias', 'GRAF_VENTASDIARIAS'],
       [[start, end], [start], []],
       { limit }
     );
@@ -997,7 +1055,7 @@ router.get('/dashboard/consumo-materias-primas', async (req, res, next) => {
     const { start } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
     const branches = parseSucursalList(req.query.sucursal);
-    const rows = await runProcedure(dbConfig, '_PvtRotaci\u00f3n', [start], { limit });
+    const rows = await getRotacionRows(dbConfig, start, limit);
     const totals = new Map<string, number>();
 
     for (const row of rows) {
@@ -1079,8 +1137,11 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
 
     console.log(`[dashboard] analisis-ventas-mensual: ano=${ano}, mes=${mes}`);
 
-    const sql = 'SELECT * FROM "Graf_VtaMes_Suc"(?, ?)';
-    const rows = await query<Record<string, unknown>>(sql, [ano, mes], dbConfig);
+    const rows = await runProcedureByNames(
+      dbConfig,
+      ['Graf_VtaMes_Suc', 'GRAF_VTA_MES_SUC', 'GRAF_VTAMES_SUC'],
+      [[ano, mes]]
+    );
 
     const seriesMap = new Map<number, any[]>();
     rows.forEach(row => {
@@ -1156,8 +1217,11 @@ router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
 
     console.log(`[dashboard] graf-vta-mes-suc: ano=${ano}, mes=${mes}`);
 
-    const sql = 'SELECT * FROM "Graf_VtaMes_Suc"(?, ?)';
-    const rows = await query<Record<string, unknown>>(sql, [ano, mes], dbConfig);
+    const rows = await runProcedureByNames(
+      dbConfig,
+      ['Graf_VtaMes_Suc', 'GRAF_VTA_MES_SUC', 'GRAF_VTAMES_SUC'],
+      [[ano, mes]]
+    );
 
     console.log(`[dashboard] graf-vta-mes-suc: ${rows.length} filas obtenidas`);
     if (rows.length > 0) {
@@ -1183,10 +1247,7 @@ router.get('/dashboard/ventas-anuales-tabla', async (req, res, next) => {
     console.log(`[dashboard] ventas-anuales-tabla: cantAnos=${cantAnos}`);
 
     try {
-      const sql = 'SELECT * FROM "_ProyVentaAnual"(?)';
-      const rows = await query<Record<string, unknown>>(sql, [cantAnos], dbConfig);
-
-      const normalizedRows = rows.map(normalizeRow);
+      const normalizedRows = await getProyVentaAnualRows(dbConfig, cantAnos);
 
       console.log(`[dashboard] ventas-anuales-tabla: ${normalizedRows.length} filas encontradas`);
 
@@ -1213,7 +1274,7 @@ router.get('/dashboard/proy-venta-anual', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const pCantAños = parseNumber(String(req.query.pCantAños ?? '5'), 5);
-    const rows = await runProcedure(dbConfig, '_ProyVentaAnual', [pCantAños]);
+    const rows = await getProyVentaAnualRows(dbConfig, pCantAños);
     const filteredRows = rows.filter(r => r && r.sucursal && r.ano !== undefined && r.mes !== undefined && r.total !== undefined);
     res.json({
       success: true,
@@ -1221,6 +1282,90 @@ router.get('/dashboard/proy-venta-anual', async (req, res, next) => {
     });
   } catch (error) {
     console.error('[dashboard] error in proy-venta-anual:', error);
+    next(error);
+  }
+});
+
+// Ventas acumuladas del dia en tiempo real (requiere SP en BD cliente)
+router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const limit = parseLimit(req.query.limit, 300);
+
+    const rows = await runProcedureByNames(
+      dbConfig,
+      [
+        'SP_VENTAS_TIEMPO_REAL',
+        'SP_VTA_TIEMPO_REAL',
+        '_PvtVentasTiempoReal',
+        '_PvtVentaTiempoReal',
+      ],
+      [[startOfDay, now], [now], []],
+      { limit },
+    );
+
+    const data = rows
+      .map(row => {
+        const rawFecha =
+          row.fecha_hora ??
+          row.fechahora ??
+          row.fecha ??
+          row.fec_hora ??
+          row.hora;
+
+        const fecha =
+          rawFecha instanceof Date
+            ? rawFecha
+            : rawFecha
+              ? new Date(String(rawFecha))
+              : null;
+
+        const totalAcumulado =
+          toNumber(row.total_acumulado) ||
+          toNumber(row.totalacumulado) ||
+          toNumber(row.acumulado) ||
+          toNumber(row.total) ||
+          toNumber(row.monto) ||
+          0;
+
+        return {
+          fechaHora: fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : '',
+          totalAcumulado,
+        };
+      })
+      .filter(item => item.fechaHora)
+      .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
+
+    const ultimo = data[data.length - 1];
+
+    res.json({
+      success: true,
+      data,
+      meta: {
+        fecha: now.toISOString().slice(0, 10),
+        ultimoTotal: ultimo?.totalAcumulado ?? 0,
+        ultimaActualizacion: ultimo?.fechaHora ?? null,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    if (message.includes('procedure unknown') || message.includes('procedure not found')) {
+      res.json({
+        success: true,
+        data: [],
+        meta: {
+          fecha: new Date().toISOString().slice(0, 10),
+          ultimoTotal: 0,
+          ultimaActualizacion: null,
+        },
+        warning: 'No existe SP de ventas en tiempo real en esta base de datos',
+      });
+      return;
+    }
     next(error);
   }
 });

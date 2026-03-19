@@ -9,7 +9,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_CONFIG, api, getApiKeyHeader } from '@/constants/api';
+import { API_CONFIG, getApiKeyHeader } from '@/constants/api';
 
 /** Claves de AsyncStorage para empresa */
 export const EMPRESA_STORAGE_KEYS = {
@@ -42,6 +42,30 @@ export interface ValidarTokenResponse {
   error?: string;
   message?: string;
 }
+
+const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, '');
+
+const unique = (values: string[]): string[] => Array.from(new Set(values));
+
+const getBackendUrlLocal = async (): Promise<string> => {
+  const stored = await AsyncStorage.getItem('@backend_url');
+  if (stored?.trim()) {
+    return stored.trim();
+  }
+
+  return API_CONFIG.BASE_URL.trim();
+};
+
+const parseResponseBody = async <T = unknown>(response: Response): Promise<{ json: T | null; raw: string }> => {
+  const raw = await response.text();
+  if (!raw.trim()) return { json: null, raw };
+
+  try {
+    return { json: JSON.parse(raw) as T, raw };
+  } catch {
+    return { json: null, raw };
+  }
+};
 
 /* ═══════════════════════════════════════════
    Funciones de Storage — Token
@@ -80,7 +104,7 @@ export async function setEmpresaToken(token: string): Promise<void> {
  */
 export async function hayTokenEmpresa(): Promise<boolean> {
   const token = await getEmpresaToken();
-  return Boolean(token && token.length >= 8);
+  return Boolean(token && token.trim().length > 0);
 }
 
 /**
@@ -172,26 +196,87 @@ export async function validarYGuardarToken(token: string): Promise<EmpresaClient
       throw new Error('Token requerido');
     }
 
-    if (trimmed.length < 8) {
-      throw new Error('Token debe tener mínimo 8 caracteres');
-    }
-
     console.log('[EmpresaStorage] Validando token...');
 
-    // Llamar al backend para validar token
-    const response = await api.post<ValidarTokenResponse>(
-      '/api/validar-token',
-      { token: trimmed },
-      {
-        headers: getApiKeyHeader(),
-      }
-    );
+    const baseUrl = stripTrailingSlash(await getBackendUrlLocal());
+    const baseWithoutCharts = baseUrl.replace(/\/charts$/i, '');
 
-    if (!response.data.success || !response.data.data) {
-      throw new Error(response.data.error || 'Token inválido');
+    const candidateUrls = unique([
+      baseUrl.endsWith('/api') ? `${baseUrl}/validar-token` : `${baseUrl}/api/validar-token`,
+      `${baseUrl}/validar-token`,
+      `${baseWithoutCharts}/api/validar-token`,
+    ]);
+
+    let lastError: string | null = null;
+    const tried404: string[] = [];
+    const triedInvalidPayload: string[] = [];
+
+    let clienteConfig: EmpresaClienteConfig | null = null;
+
+    for (const validarTokenUrl of candidateUrls) {
+      console.log('[EmpresaStorage] URL validar-token:', validarTokenUrl);
+
+      const response = await fetch(validarTokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getApiKeyHeader(),
+        },
+        body: JSON.stringify({ token: trimmed }),
+      });
+
+      const { json, raw } = await parseResponseBody<ValidarTokenResponse>(response);
+      const contentType = response.headers.get('content-type') || '';
+
+      if (response.ok && json?.success && json.data) {
+        clienteConfig = json.data;
+        break;
+      }
+
+      // Respuesta 200 pero no JSON esperado (ej: HTML de sitio web)
+      if (response.ok && (!json || typeof json.success !== 'boolean')) {
+        triedInvalidPayload.push(`${validarTokenUrl} [content-type=${contentType || 'unknown'}]`);
+        continue;
+      }
+
+      // Respuesta API válida pero token inválido/empresa inactiva
+      if (response.ok && json && json.success === false) {
+        lastError = json.error || json.message || 'Token inválido o empresa inactiva';
+        break;
+      }
+
+      if (response.status === 404) {
+        tried404.push(validarTokenUrl);
+        continue;
+      }
+
+      const truncatedRaw = raw?.slice(0, 140)?.replace(/\s+/g, ' ') || '';
+      lastError = json?.error || json?.message || `Error ${response.status} al validar token${truncatedRaw ? ` | body: ${truncatedRaw}` : ''}`;
+      break;
     }
 
-    const clienteConfig = response.data.data;
+    if (!clienteConfig) {
+      if (lastError) {
+        throw new Error(lastError);
+      }
+
+      if (tried404.length > 0) {
+        throw new Error(
+          'No se encontró el endpoint de validación de token en el backend configurado. ' +
+          'Verifica despliegue de backend y URL base. URLs probadas: ' + tried404.join(' | ')
+        );
+      }
+
+      if (triedInvalidPayload.length > 0) {
+        throw new Error(
+          'El backend respondió con formato no válido para validar token (posible página HTML o ruta incorrecta). ' +
+          'URLs probadas: ' + triedInvalidPayload.join(' | ')
+        );
+      }
+
+      throw new Error('Token inválido o empresa inactiva');
+    }
+
     console.log(
       '[EmpresaStorage] Token validado para empresa:',
       clienteConfig.razonSocial

@@ -62,12 +62,16 @@ export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
       try {
         const decoded = jwt.verify(token, config.jwtSecret) as any;
 
-        // Si el token contiene información del cliente, usar su BD específica
-        if (decoded.rut && decoded.ip && decoded.bdAlias) {
+        // Si el token contiene información del cliente, usar su BD específica.
+        // En flujo por token, puede no venir `rut`, por eso solo exigimos ip + bdAlias.
+        if (decoded.ip && decoded.bdAlias) {
+          const rawAlias = String(decoded.bdAlias).trim();
+
           dbConfig = {
             host: decoded.ip,
             port: decoded.puerto || config.firebird.port,
-            database: `C:\\DuoCOM\\BDatos\\${decoded.bdAlias}.Fdb`,
+            // BDALIAS puede ser alias lógico o ruta completa; usar tal cual.
+            database: rawAlias,
             user: config.firebird.user,
             password: config.firebird.password,
             client: config.firebird.client ?? undefined,

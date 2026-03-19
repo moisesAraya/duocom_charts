@@ -56,11 +56,6 @@ export default function ConfigTokenScreen() {
       return;
     }
 
-    if (token.length < 8) {
-      Alert.alert('Error', 'Token debe tener mínimo 8 caracteres');
-      return;
-    }
-
     setLoading(true);
     try {
       console.log('[ConfigToken] Validando token...');

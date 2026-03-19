@@ -240,11 +240,14 @@ export const buildProcedureSql = (
   params: unknown[],
   limit?: number
 ): string => {
+  const isSimpleIdentifier = /^[A-Za-z_][A-Za-z0-9_$]*$/.test(name);
+  const identifier = isSimpleIdentifier ? name : `"${name.replace(/"/g, '""')}"`;
+
   if (!params.length) {
-    return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM "${name}"`;
+    return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM ${identifier}`;
   }
   const placeholders = params.map(() => '?').join(', ');
-  return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM "${name}"(${placeholders})`;
+  return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM ${identifier}(${placeholders})`;
 };
 
 /**
@@ -311,7 +314,8 @@ export const runProcedureByNames = async (
       if (
         message.includes('procedure unknown') ||
         message.includes('procedure name') ||
-        message.includes('procedure not found')
+        message.includes('procedure not found') ||
+        message.includes('table unknown')
       ) {
         lastError = error;
         continue;

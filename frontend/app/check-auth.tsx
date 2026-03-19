@@ -81,7 +81,7 @@ export default function CheckAuthScreen() {
 
   return (
     <LinearGradient
-      colors={['#667eea', '#764ba2']}
+      colors={['#0B1F3A', '#F97316']}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
       style={styles.container}
