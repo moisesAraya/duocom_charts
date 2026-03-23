@@ -28,6 +28,8 @@ import {
 import { config } from '../config';
 import type { FirebirdConnectionConfig } from './firebird';
 
+const isVerbose = process.env.FIREBIRD_LOG_VERBOSE === 'true';
+
 /* ═══════════════════════════════════════════
    Tipos internos del pool
 ═══════════════════════════════════════════ */
@@ -120,12 +122,14 @@ const createClient = (options: FirebirdConnectionConfig): Client => {
 const openAttachment = async (
   options: FirebirdConnectionConfig
 ): Promise<{ client: Client; attachment: Attachment }> => {
-  console.info('[firebirdPool] Connecting:', {
-    host: options.host,
-    port: options.port,
-    database: options.database,
-    user: options.user,
-  });
+  if (isVerbose) {
+    console.info('[firebirdPool] Connecting:', {
+      host: options.host,
+      port: options.port,
+      database: options.database,
+      user: options.user,
+    });
+  }
   const client = createClient(options);
   const uri = buildDatabaseUri(options);
   try {

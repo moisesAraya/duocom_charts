@@ -35,7 +35,15 @@ type UserRecord = {
 const fetchUserRecord = async (rut: number): Promise<UserRecord | null> => {
   const rows = await query<Record<string, unknown>>(
     'SELECT * FROM "Clientes" WHERE "RUT" = ? AND "ESTADO" = 1',
-    [String(rut)]
+    [String(rut)],
+    {
+      host: config.centralFirebird.host,
+      port: config.centralFirebird.port,
+      database: config.centralFirebird.database,
+      user: config.centralFirebird.user,
+      password: config.centralFirebird.password,
+      client: config.centralFirebird.client ?? undefined,
+    }
   );
 
   if (!rows.length) return null;
@@ -66,14 +74,16 @@ export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
         // En flujo por token, puede no venir `rut`, por eso solo exigimos ip + bdAlias.
         if (decoded.ip && decoded.bdAlias) {
           const rawAlias = String(decoded.bdAlias).trim();
+          const decodedUser = typeof decoded.user === 'string' ? decoded.user.trim() : '';
+          const decodedPassword = typeof decoded.clave === 'string' ? decoded.clave : '';
 
           dbConfig = {
             host: decoded.ip,
             port: decoded.puerto || config.firebird.port,
             // BDALIAS puede ser alias lógico o ruta completa; usar tal cual.
             database: rawAlias,
-            user: config.firebird.user,
-            password: config.firebird.password,
+            user: decodedUser || config.firebird.user,
+            password: decodedPassword || config.firebird.password,
             client: config.firebird.client ?? undefined,
           };
           req.user = { rut: parseRutNumber(decoded.rut) || 0 };
@@ -87,12 +97,12 @@ export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
 
     // Fallback: usar BD central (DUOCOMAPPS.Fdb)
     dbConfig = {
-      host: config.firebird.host,
-      port: config.firebird.port,
-      database: config.firebird.database,
-      user: config.firebird.user,
-      password: config.firebird.password,
-      client: config.firebird.client ?? undefined,
+      host: config.centralFirebird.host,
+      port: config.centralFirebird.port,
+      database: config.centralFirebird.database,
+      user: config.centralFirebird.user,
+      password: config.centralFirebird.password,
+      client: config.centralFirebird.client ?? undefined,
     };
     req.user = { rut: 0 };
     req.dbConfig = dbConfig;

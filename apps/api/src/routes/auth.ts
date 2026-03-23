@@ -34,6 +34,8 @@ type ClienteConfig = {
   ip: string;
   puerto: number;
   bdAlias: string;
+  user: string;
+  clave: string;
   url1: string;
   url2: string;
   url3: string;
@@ -52,6 +54,15 @@ const parseNumber = (value: string, fallback: number): number => {
 /** Construye un ClienteConfig a partir de un row crudo de la BD central. */
 const buildClienteConfig = (row: Record<string, unknown>): ClienteConfig => {
   const puertoRaw = readField(row, 'PUERTO');
+  const usuario =
+    readField(row, 'USUARIO') ||
+    readField(row, 'USER') ||
+    readField(row, 'USR');
+  const contrasena =
+    readField(row, 'CONTRASEÑA') ||
+    readField(row, 'CONTRASENA') ||
+    readField(row, 'CLAVE') ||
+    readField(row, 'PASSWORD');
   return {
     rut: readField(row, 'RUT'),
     razonSocial: readField(row, 'RZ'),
@@ -60,6 +71,8 @@ const buildClienteConfig = (row: Record<string, unknown>): ClienteConfig => {
       ? Number.parseInt(puertoRaw, 10)
       : config.firebird.port,
     bdAlias: readField(row, 'DBALIAS') || readField(row, 'BDALIAS'),
+    user: usuario || config.firebird.user,
+    clave: contrasena || config.firebird.password,
     url1: readField(row, 'URL1'),
     url2: readField(row, 'URL2'),
     url3: readField(row, 'URL3'),
@@ -83,12 +96,12 @@ const fetchClienteByRut = async (
   rutNumber: number
 ): Promise<Record<string, unknown> | null> => {
   const dbConfig: FirebirdConnectionConfig = {
-    host: config.firebird.host || 'localhost',
-    port: config.firebird.port,
-    database: config.firebird.database,
-    user: config.firebird.user,
-    password: config.firebird.password,
-    client: config.firebird.client ?? undefined,
+    host: config.centralFirebird.host || 'localhost',
+    port: config.centralFirebird.port,
+    database: config.centralFirebird.database,
+    user: config.centralFirebird.user,
+    password: config.centralFirebird.password,
+    client: config.centralFirebird.client ?? undefined,
   };
   const rows = await executeQuery<Record<string, unknown>>(
     dbConfig,
@@ -103,12 +116,12 @@ const fetchClienteByToken = async (
   token: string
 ): Promise<Record<string, unknown> | null> => {
   const dbConfig: FirebirdConnectionConfig = {
-    host: config.firebird.host || 'localhost',
-    port: config.firebird.port,
-    database: config.firebird.database,
-    user: config.firebird.user,
-    password: config.firebird.password,
-    client: config.firebird.client ?? undefined,
+    host: config.centralFirebird.host || 'localhost',
+    port: config.centralFirebird.port,
+    database: config.centralFirebird.database,
+    user: config.centralFirebird.user,
+    password: config.centralFirebird.password,
+    client: config.centralFirebird.client ?? undefined,
   };
   
   // Buscar por campo TOKEN si existe
@@ -228,8 +241,8 @@ router.post('/validar-token', async (req, res, next) => {
       ip: cliente.ip,
       puerto: cliente.puerto,
       bdAlias: cliente.bdAlias,
-      user: config.firebird.user,
-      clave: config.firebird.password,
+      user: cliente.user,
+      clave: cliente.clave,
       url1: cliente.url1,
       url2: cliente.url2,
       url3: cliente.url3,
@@ -303,8 +316,8 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
         token,
         cliente: {
           ...clienteConfig,
-          user: config.firebird.user,
-          clave: config.firebird.password,
+          user: clienteConfig.user,
+          clave: clienteConfig.clave,
         },
       },
     });

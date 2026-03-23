@@ -101,7 +101,7 @@ export const config = {
   /** Configuración de conexión a la base de datos Firebird */
   firebird: {
     host: getEnvAny(['FIREBIRD_HOST', 'FB_HOST'], '192.168.191.108'),
-    port: getEnvNumberAny(['FIREBIRD_PORT', 'FB_PORT'], '350'),
+    port: getEnvNumberAny(['FIREBIRD_PORT', 'FB_PORT'], '3050'),
     database: getEnvAny(['FIREBIRD_DATABASE', 'FB_DATABASE']),
     user: getEnvAny(['FIREBIRD_USER', 'FB_USER']),
     password: getEnvAny(['FIREBIRD_PASSWORD', 'FB_PASSWORD']),
@@ -114,6 +114,20 @@ export const config = {
     /** Cantidad máxima de conexiones simultáneas en el pool */
     poolSize: getEnvNumber('FIREBIRD_POOL_SIZE', '5'),
   },
+
+  /** Configuración explícita para BD central (DUOCOMAPPS) */
+  centralFirebird: {
+    host: getEnvAny(['FIREBIRD_CENTRAL_HOST', 'FIREBIRD_HOST', 'FB_HOST'], '192.168.191.108'),
+    port: getEnvNumberAny(['FIREBIRD_CENTRAL_PORT', 'FIREBIRD_PORT', 'FB_PORT'], '3050'),
+    database: getEnvAny(['FIREBIRD_CENTRAL_DATABASE', 'FIREBIRD_DATABASE', 'FB_DATABASE']),
+    user: getEnvAny(['FIREBIRD_CENTRAL_USER', 'FIREBIRD_USER', 'FB_USER']),
+    password: getEnvAny(['FIREBIRD_CENTRAL_PASSWORD', 'FIREBIRD_PASSWORD', 'FB_PASSWORD']),
+    role: process.env.FIREBIRD_CENTRAL_ROLE ?? process.env.FIREBIRD_ROLE,
+    client: process.env.FIREBIRD_CENTRAL_CLIENT ?? process.env.FB_CLIENT_LIBRARY ?? process.env.FIREBIRD_CLIENT,
+    lowercaseKeys: process.env.FIREBIRD_LOWERCASE_KEYS === 'true',
+    retryConnectionInterval: getEnvNumber('FIREBIRD_RETRY_INTERVAL_MS', '0'),
+    poolSize: getEnvNumber('FIREBIRD_POOL_SIZE', '5'),
+  },
 };
 
 // Log de inicio — muestra la configuración de Firebird SIN contraseña
@@ -123,4 +137,12 @@ console.info('[config] Firebird config loaded:', {
   database: config.firebird.database,
   user: config.firebird.user,
   poolSize: config.firebird.poolSize,
+});
+
+console.info('[config] Central Firebird config loaded:', {
+  host: config.centralFirebird.host,
+  port: config.centralFirebird.port,
+  database: config.centralFirebird.database,
+  user: config.centralFirebird.user,
+  poolSize: config.centralFirebird.poolSize,
 });

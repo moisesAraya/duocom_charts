@@ -21,6 +21,8 @@ import {
 } from 'node-firebird-driver-native';
 import { config } from '../config';
 
+const isVerbose = process.env.FIREBIRD_LOG_VERBOSE === 'true';
+
 /* ═══════════════════════════════════════════
    Tipo de configuración de conexión
 ═══════════════════════════════════════════ */
@@ -74,10 +76,14 @@ const createClientWithFallback = (customLibraryPath?: string | null): Client => 
   for (const library of libraries) {
     try {
       const client = createNativeClient(library);
-      console.info(`[firebird] Using client library: ${library}`);
+      if (isVerbose) {
+        console.info(`[firebird] Using client library: ${library}`);
+      }
       return client;
     } catch (error) {
-      console.warn(`[firebird] Failed to load client library: ${library}`);
+      if (isVerbose) {
+        console.warn(`[firebird] Failed to load client library: ${library}`);
+      }
       lastError = error;
     }
   }
@@ -105,10 +111,14 @@ const openAttachment = async (
 ): Promise<{ client: Client; attachment: Attachment }> => {
   const client = createClient(options);
   const uri = buildDatabaseUri(options);
-  console.info(`[firebird] Connecting to ${uri}`);
+  if (isVerbose) {
+    console.info(`[firebird] Connecting to ${uri}`);
+  }
   try {
     const attachment = await client.connect(uri);
-    console.info('[firebird] Connection established');
+    if (isVerbose) {
+      console.info('[firebird] Connection established');
+    }
     return { client, attachment };
   } catch (error) {
     console.error('[firebird] Connection failed', error);
