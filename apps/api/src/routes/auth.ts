@@ -302,6 +302,8 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
       ip: clienteConfig.ip,
       puerto: clienteConfig.puerto,
       bdAlias: clienteConfig.bdAlias,
+      user: clienteConfig.user,
+      clave: clienteConfig.clave,
     }, config.jwtSecret, {
       expiresIn: config.jwtExpiresIn as any,
     });
