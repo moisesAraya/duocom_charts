@@ -9,6 +9,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { API_CONFIG, getApiKeyHeader } from '@/constants/api';
 
 /** Claves de AsyncStorage para empresa */
@@ -47,13 +48,103 @@ const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, '');
 
 const unique = (values: string[]): string[] => Array.from(new Set(values));
 
-const getBackendUrlLocal = async (): Promise<string> => {
-  const stored = await AsyncStorage.getItem('@backend_url');
-  if (stored?.trim()) {
-    return stored.trim();
+const getDevHostFromExpo = (): string | null => {
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants as any)?.manifest2?.extra?.expoClient?.hostUri ??
+    (Constants as any)?.manifest?.debuggerHost ??
+    null;
+
+  if (!hostUri || typeof hostUri !== 'string') return null;
+  const host = hostUri.split(':')[0]?.trim();
+  return host || null;
+};
+
+const normalizeStoredBackendUrl = (storedUrl: string, fallbackUrl: string): string => {
+  const storedTrimmed = storedUrl.trim();
+  if (!storedTrimmed) return fallbackUrl;
+
+  try {
+    const storedParsed = new URL(storedTrimmed);
+    const fallbackParsed = new URL(fallbackUrl);
+
+    const storedPath = stripTrailingSlash(storedParsed.pathname || '/');
+    const fallbackPath = stripTrailingSlash(fallbackParsed.pathname || '/');
+
+    // Si el backend guardado quedó solo en el host ("/") pero el fallback trae
+    // un path de despliegue (ej: /charts), preferimos el fallback.
+    if (
+      storedParsed.origin === fallbackParsed.origin &&
+      (storedPath === '' || storedPath === '/') &&
+      fallbackPath &&
+      fallbackPath !== '/'
+    ) {
+      return fallbackUrl;
+    }
+  } catch {
+    // Si no se pueden parsear como URL absolutas, usar el valor guardado.
   }
 
-  return API_CONFIG.BASE_URL.trim();
+  return storedTrimmed;
+};
+
+const buildValidarTokenUrls = (backendBaseUrl: string): string[] => {
+  const normalizedBase = stripTrailingSlash(backendBaseUrl)
+    .replace(/\/validar-token$/i, '')
+    .replace(/\/login$/i, '');
+
+  const candidates: string[] = [];
+
+  if (normalizedBase.endsWith('/api')) {
+    candidates.push(`${normalizedBase}/validar-token`);
+  } else {
+    candidates.push(`${normalizedBase}/api/validar-token`);
+  }
+
+  candidates.push(`${normalizedBase}/validar-token`);
+
+  const withoutCharts = normalizedBase.replace(/\/charts$/i, '');
+  if (withoutCharts !== normalizedBase) {
+    candidates.push(`${withoutCharts}/api/validar-token`);
+    candidates.push(`${withoutCharts}/validar-token`);
+  }
+
+  if (normalizedBase.endsWith('/api')) {
+    const withoutApi = normalizedBase.replace(/\/api$/i, '');
+    candidates.push(`${withoutApi}/api/validar-token`);
+  }
+
+  try {
+    const parsed = new URL(normalizedBase);
+    candidates.push(`${parsed.origin}/api/validar-token`);
+    candidates.push(`${parsed.origin}/charts/api/validar-token`);
+    candidates.push(`${parsed.origin}/charts/validar-token`);
+  } catch {
+    // Si no es URL absoluta, se mantienen solo candidatos basados en base URL.
+  }
+
+  const isDevelopment = typeof __DEV__ !== 'undefined' && __DEV__;
+  if (isDevelopment) {
+    const expoHost = getDevHostFromExpo();
+    if (expoHost) {
+      candidates.push(`http://${expoHost}:3002/api/validar-token`);
+      candidates.push(`http://${expoHost}:3002/validar-token`);
+    }
+    candidates.push('http://localhost:3002/api/validar-token');
+    candidates.push('http://127.0.0.1:3002/api/validar-token');
+  }
+
+  return unique(candidates.map(stripTrailingSlash));
+};
+
+const getBackendUrlLocal = async (): Promise<string> => {
+  const fallback = API_CONFIG.BASE_URL.trim();
+  const stored = await AsyncStorage.getItem('@backend_url');
+  if (stored?.trim()) {
+    return normalizeStoredBackendUrl(stored, fallback);
+  }
+
+  return fallback;
 };
 
 const parseResponseBody = async <T = unknown>(response: Response): Promise<{ json: T | null; raw: string }> => {
@@ -199,31 +290,40 @@ export async function validarYGuardarToken(token: string): Promise<EmpresaClient
     console.log('[EmpresaStorage] Validando token...');
 
     const baseUrl = stripTrailingSlash(await getBackendUrlLocal());
-    const baseWithoutCharts = baseUrl.replace(/\/charts$/i, '');
-
-    const candidateUrls = unique([
-      baseUrl.endsWith('/api') ? `${baseUrl}/validar-token` : `${baseUrl}/api/validar-token`,
-      `${baseUrl}/validar-token`,
-      `${baseWithoutCharts}/api/validar-token`,
-    ]);
+    const candidateUrls = buildValidarTokenUrls(baseUrl);
 
     let lastError: string | null = null;
     const tried404: string[] = [];
     const triedInvalidPayload: string[] = [];
+    const networkErrors: string[] = [];
 
     let clienteConfig: EmpresaClienteConfig | null = null;
 
     for (const validarTokenUrl of candidateUrls) {
       console.log('[EmpresaStorage] URL validar-token:', validarTokenUrl);
 
-      const response = await fetch(validarTokenUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getApiKeyHeader(),
-        },
-        body: JSON.stringify({ token: trimmed }),
-      });
+      let response: Response;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        try {
+          response = await fetch(validarTokenUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...getApiKeyHeader(),
+            },
+            body: JSON.stringify({ token: trimmed }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Error de red';
+        networkErrors.push(`${validarTokenUrl} -> ${errorMessage}`);
+        continue;
+      }
 
       const { json, raw } = await parseResponseBody<ValidarTokenResponse>(response);
       const contentType = response.headers.get('content-type') || '';
@@ -271,6 +371,13 @@ export async function validarYGuardarToken(token: string): Promise<EmpresaClient
         throw new Error(
           'El backend respondió con formato no válido para validar token (posible página HTML o ruta incorrecta). ' +
           'URLs probadas: ' + triedInvalidPayload.join(' | ')
+        );
+      }
+
+      if (networkErrors.length > 0) {
+        throw new Error(
+          'No se pudo conectar al endpoint de validación de token. ' +
+          'Revise URL base, conectividad y puertos. Detalles: ' + networkErrors.join(' | ')
         );
       }
 

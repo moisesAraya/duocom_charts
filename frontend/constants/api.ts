@@ -29,7 +29,27 @@ const isDevelopment = (() => {
   }
 })();
 
-const fallbackDevUrl = 'https://duocom.dyndns.org/charts';
+const getExpoDevHost = (): string | null => {
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants as any)?.manifest2?.extra?.expoClient?.hostUri ??
+    (Constants as any)?.manifest?.debuggerHost ??
+    null;
+
+  if (!hostUri || typeof hostUri !== 'string') return null;
+  const host = hostUri.split(':')[0]?.trim();
+  return host || null;
+};
+
+const buildDevBaseUrl = (): string => {
+  const devHost = getExpoDevHost();
+  if (devHost) {
+    return `http://${devHost}:3002`;
+  }
+  return 'http://localhost:3002';
+};
+
+const fallbackDevUrl = buildDevBaseUrl();
 const fallbackProdUrl = 'https://duocom.dyndns.org/charts';
 
 const baseUrl =

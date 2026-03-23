@@ -131,14 +131,46 @@ export const setBackendUrl = async (url: string): Promise<void> => {
   api.defaults.baseURL = trimmed;
 };
 
+const stripTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
+
+const normalizeBackendUrl = (storedUrl: string, fallbackUrl: string): string => {
+  const storedTrimmed = storedUrl.trim();
+  if (!storedTrimmed) return fallbackUrl;
+
+  try {
+    const storedParsed = new URL(storedTrimmed);
+    const fallbackParsed = new URL(fallbackUrl);
+
+    const storedPath = stripTrailingSlash(storedParsed.pathname || '/');
+    const fallbackPath = stripTrailingSlash(fallbackParsed.pathname || '/');
+
+    if (
+      storedParsed.origin === fallbackParsed.origin &&
+      (storedPath === '' || storedPath === '/') &&
+      fallbackPath &&
+      fallbackPath !== '/'
+    ) {
+      return fallbackUrl;
+    }
+  } catch {
+    // Si no se puede parsear, mantener valor guardado.
+  }
+
+  return storedTrimmed;
+};
+
 export const getBackendUrl = async (): Promise<string> => {
   const resolved = API_CONFIG.BASE_URL.trim();
   const stored = await AsyncStorage.getItem(STORAGE_KEYS.BACKEND_URL);
 
   // Si existe una URL guardada, usarla como fuente de verdad
   if (stored?.trim()) {
-    api.defaults.baseURL = stored.trim();
-    return stored.trim();
+    const normalized = normalizeBackendUrl(stored, resolved);
+    api.defaults.baseURL = normalized;
+    if (normalized !== stored.trim()) {
+      await AsyncStorage.setItem(STORAGE_KEYS.BACKEND_URL, normalized);
+    }
+    return normalized;
   }
 
   // Si no existe URL guardada, inicializar con la del entorno

@@ -33,6 +33,7 @@ import {
   clearEmpresaToken,
   getClienteConfig,
 } from '@/utils/empresa-storage';
+import { logout } from '@/utils/config';
 
 export default function ConfigTokenScreen() {
   const [token, setToken] = useState('');
@@ -84,21 +85,21 @@ export default function ConfigTokenScreen() {
     }
   };
 
-  const handleLimpiarConfig = async () => {
+  const handleIngresarOtroToken = async () => {
     Alert.alert(
       'Confirmar',
-      '¿Descartar empresa configurada y empezar de nuevo?',
+      '¿Desea cambiar la empresa y registrar otro token?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Limpiar',
-          style: 'destructive',
+          text: 'Cambiar',
           onPress: async () => {
             try {
+              await logout();
               await clearEmpresaToken();
               setToken('');
               setEmpresaConfig('');
-              Alert.alert('Información', 'Configuración limpiada');
+              Alert.alert('Información', 'Ahora puede ingresar otro token de empresa');
             } catch (error) {
               Alert.alert('Error', 'No se pudo limpiar la configuración');
             }
@@ -202,11 +203,11 @@ export default function ConfigTokenScreen() {
                 {empresaConfig && (
                   <TouchableOpacity
                     style={[styles.button, styles.secondaryButton]}
-                    onPress={handleLimpiarConfig}
+                    onPress={handleIngresarOtroToken}
                     disabled={loading}
                   >
-                    <Ionicons name="trash" size={20} color="#fff" />
-                    <Text style={styles.secondaryButtonText}>Limpiar</Text>
+                    <Ionicons name="swap-horizontal" size={20} color="#fff" />
+                    <Text style={styles.secondaryButtonText}>Ingresar otro token</Text>
                   </TouchableOpacity>
                 )}
               </View>

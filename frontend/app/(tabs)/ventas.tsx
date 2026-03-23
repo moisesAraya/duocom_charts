@@ -65,6 +65,15 @@ interface VentaTiempoRealRow {
   totalAcumulado: number;
 }
 
+interface VentasTiempoRealKpis {
+  ticketPromedioDiario: number;
+  ticketPromedioMensual: number;
+  cantidadTicketsDia: number;
+  cantidadTicketsMes: number;
+  promedioTicketsDiarioMes: number;
+  frecuenciaVentaMinutos: number | null;
+}
+
 const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[] => {
   const start = new Date(now);
   start.setHours(8, 0, 0, 0);
@@ -137,6 +146,12 @@ const toNumber = (value: unknown): number => {
   return 0;
 };
 
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = toNumber(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 function niceStep(rawStep: number) {
   if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
   const exp = Math.floor(Math.log10(rawStep));
@@ -199,6 +214,9 @@ export default function VentasScreen() {
   const [ventasTiempoRealEsMock, setVentasTiempoRealEsMock] = useState(false);
   const [showVentasTiempoRealDetalle, setShowVentasTiempoRealDetalle] = useState(false);
   const [ultimaConsultaTiempoReal, setUltimaConsultaTiempoReal] = useState<Date | null>(null);
+  const [ventasTiempoRealKpis, setVentasTiempoRealKpis] = useState<VentasTiempoRealKpis | null>(
+    null,
+  );
 
   /* =========================
      DERIVED PARAMS
@@ -307,6 +325,20 @@ export default function VentasScreen() {
         params: { ...baseRequestParams, limit: 240 },
       });
 
+      const rawKpis = res.data?.meta?.kpis;
+      if (rawKpis) {
+        setVentasTiempoRealKpis({
+          ticketPromedioDiario: toNumber(rawKpis.ticketPromedioDiario),
+          ticketPromedioMensual: toNumber(rawKpis.ticketPromedioMensual),
+          cantidadTicketsDia: toNumber(rawKpis.cantidadTicketsDia),
+          cantidadTicketsMes: toNumber(rawKpis.cantidadTicketsMes),
+          promedioTicketsDiarioMes: toNumber(rawKpis.promedioTicketsDiarioMes),
+          frecuenciaVentaMinutos: toNullableNumber(rawKpis.frecuenciaVentaMinutos),
+        });
+      } else {
+        setVentasTiempoRealKpis(null);
+      }
+
       const rows = (res.data?.data ?? [])
         .map((row: any) => ({
           fechaHora: String(row.fechaHora || row.fecha_hora || ''),
@@ -324,6 +356,7 @@ export default function VentasScreen() {
     } catch {
       setVentasTiempoReal(buildMockVentasTiempoReal());
       setVentasTiempoRealEsMock(true);
+      setVentasTiempoRealKpis(null);
     } finally {
       setLoadingVentasTiempoReal(false);
       setUltimaConsultaTiempoReal(new Date());
@@ -405,6 +438,23 @@ export default function VentasScreen() {
       ultimaConsultaTiempoReal.getMinutes(),
     ).padStart(2, '0')}:${String(ultimaConsultaTiempoReal.getSeconds()).padStart(2, '0')}`;
   }, [ultimaConsultaTiempoReal]);
+
+  const formatTicketCount = useCallback((value: number | null | undefined) => {
+    if (value === null || value === undefined) return '--';
+    return Math.round(value).toLocaleString('es-CL');
+  }, []);
+
+  const frecuenciaVentasLabel = useMemo(() => {
+    const frecuencia = ventasTiempoRealKpis?.frecuenciaVentaMinutos;
+    if (frecuencia === null || frecuencia === undefined) return '--';
+    return `${frecuencia.toFixed(1)} min/ticket`;
+  }, [ventasTiempoRealKpis]);
+
+  const promedioTicketsDiaMesLabel = useMemo(() => {
+    const promedio = ventasTiempoRealKpis?.promedioTicketsDiarioMes;
+    if (promedio === null || promedio === undefined) return '--';
+    return promedio.toFixed(1);
+  }, [ventasTiempoRealKpis]);
 
   const ventasTiempoRealDetalle = useMemo(() => {
     return ventasTiempoReal
@@ -620,6 +670,52 @@ export default function VentasScreen() {
               <View style={styles.rtKpiBox}>
                 <Text style={styles.rtKpiLabel}>Dato hasta</Text>
                 <Text style={styles.rtKpiValue}>{ultimaActualizacion}</Text>
+              </View>
+            </View>
+            <View style={styles.rtKpiRow}>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Ticket promedio diario</Text>
+                <Text style={styles.rtKpiValue}>
+                  {ventasTiempoRealKpis
+                    ? formatCurrency(ventasTiempoRealKpis.ticketPromedioDiario)
+                    : '--'}
+                </Text>
+              </View>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Ticket promedio mensual</Text>
+                <Text style={styles.rtKpiValue}>
+                  {ventasTiempoRealKpis
+                    ? formatCurrency(ventasTiempoRealKpis.ticketPromedioMensual)
+                    : '--'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.rtKpiRow}>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Tickets diarios</Text>
+                <Text style={styles.rtKpiValue}>
+                  {ventasTiempoRealKpis
+                    ? formatTicketCount(ventasTiempoRealKpis.cantidadTicketsDia)
+                    : '--'}
+                </Text>
+              </View>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Tickets mensuales (acum.)</Text>
+                <Text style={styles.rtKpiValue}>
+                  {ventasTiempoRealKpis
+                    ? formatTicketCount(ventasTiempoRealKpis.cantidadTicketsMes)
+                    : '--'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.rtKpiRow}>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Promedio tickets/día (mes)</Text>
+                <Text style={styles.rtKpiValue}>{promedioTicketsDiaMesLabel}</Text>
+              </View>
+              <View style={styles.rtKpiBox}>
+                <Text style={styles.rtKpiLabel}>Frecuencia de ventas</Text>
+                <Text style={styles.rtKpiValue}>{frecuenciaVentasLabel}</Text>
               </View>
             </View>
             <View style={styles.rtActionsRow}>

@@ -25,6 +25,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from 'expo-status-bar';
+import Constants from 'expo-constants';
 import { router } from "expo-router";
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -40,6 +41,52 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const stripTrailingSlash = (url: string): string => url.replace(/\/+$/, "");
+
+const unique = (values: string[]): string[] => Array.from(new Set(values));
+
+const getDevHostFromExpo = (): string | null => {
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants as any)?.manifest2?.extra?.expoClient?.hostUri ??
+    (Constants as any)?.manifest?.debuggerHost ??
+    null;
+
+  if (!hostUri || typeof hostUri !== 'string') return null;
+  const host = hostUri.split(':')[0]?.trim();
+  return host || null;
+};
+
+const buildLoginCandidateUrls = (baseUrl: string): string[] => {
+  const normalizedBase = stripTrailingSlash(baseUrl)
+    .replace(/\/api$/i, '')
+    .replace(/\/login$/i, '');
+
+  const candidates = [
+    `${normalizedBase}/api/login`,
+    `${normalizedBase}/login`,
+  ];
+
+  try {
+    const parsed = new URL(normalizedBase);
+    candidates.push(`${parsed.origin}/charts/api/login`);
+    candidates.push(`${parsed.origin}/api/login`);
+  } catch {
+    // Si no se puede parsear como URL, usar solo las rutas relativas al baseUrl.
+  }
+
+  const isDevelopment = typeof __DEV__ !== 'undefined' && __DEV__;
+  if (isDevelopment) {
+    const expoHost = getDevHostFromExpo();
+    if (expoHost) {
+      candidates.push(`http://${expoHost}:3002/api/login`);
+      candidates.push(`http://${expoHost}:3002/login`);
+    }
+    candidates.push('http://localhost:3002/api/login');
+    candidates.push('http://127.0.0.1:3002/api/login');
+  }
+
+  return unique(candidates.map(stripTrailingSlash));
+};
 
 const safeJsonFromResponse = async <T = any>(response: Response): Promise<T | null> => {
   const raw = await response.text();
@@ -114,33 +161,82 @@ export default function LoginScreen() {
 
       console.log("[login] URL obtenida de config:", API_URL);
 
-      // Enviar credenciales al endpoint de login
+      // Enviar credenciales al endpoint de login con fallback por URL
       let json = null;
-      try {
-        const authHeaders = await getAuthHeaders();
-        console.log("[login] Intentando conectar a:", `${API_URL}/api/login`);
-        const response = await fetch(`${API_URL}/api/login`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-            "x-cliente-config": JSON.stringify(empresaConfig),
-          },
-          body: JSON.stringify({
-            username: username.trim(),
-            password: password,
-          }),
-        });
-        console.log("[login] Respuesta recibida:", response.status);
-        json = await safeJsonFromResponse(response);
-        if (!json) {
-          throw new Error(`Respuesta vacia o invalida desde ${API_URL}/api/login`);
+      const authHeaders = await getAuthHeaders();
+      const candidateLoginUrls = buildLoginCandidateUrls(API_URL);
+      const networkErrors: string[] = [];
+      const invalidPayloadResponses: string[] = [];
+      let backendError: string | null = null;
+
+      for (const loginUrl of candidateLoginUrls) {
+        console.log("[login] Intentando conectar a:", loginUrl);
+
+        try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12000);
+
+          let response: Response;
+          try {
+            response = await fetch(loginUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...authHeaders,
+                "x-cliente-config": JSON.stringify(empresaConfig),
+              },
+              body: JSON.stringify({
+                username: username.trim(),
+                password: password,
+              }),
+              signal: controller.signal,
+            });
+          } finally {
+            clearTimeout(timeout);
+          }
+
+          console.log("[login] Respuesta recibida:", response.status, loginUrl);
+          const parsed = await safeJsonFromResponse(response);
+
+          if (response.ok && parsed) {
+            json = parsed;
+            break;
+          }
+
+          if (response.ok && !parsed) {
+            const contentType = response.headers.get('content-type') || 'unknown';
+            invalidPayloadResponses.push(`${loginUrl} [content-type=${contentType}]`);
+            continue;
+          }
+
+          if (parsed && typeof parsed === 'object') {
+            backendError = (parsed as any).error || (parsed as any).message || `Error HTTP ${response.status}`;
+            break;
+          }
+
+          invalidPayloadResponses.push(`${loginUrl} [status=${response.status}]`);
+        } catch (error: any) {
+          const message = error instanceof Error ? error.message : 'Error de red';
+          networkErrors.push(`${loginUrl} -> ${message}`);
         }
-        console.log("[login] Conexión exitosa con:", API_URL);
-      } catch (error: any) {
-        console.log("[login] Falló con:", API_URL, error.message);
-        throw error;
       }
+
+      if (!json) {
+        if (backendError) {
+          throw new Error(backendError);
+        }
+        if (invalidPayloadResponses.length > 0) {
+          throw new Error(
+            `El backend respondió con formato no válido en login. URLs probadas: ${invalidPayloadResponses.join(' | ')}`
+          );
+        }
+        if (networkErrors.length > 0) {
+          throw new Error(
+            `No se pudo conectar a login. URLs probadas: ${networkErrors.join(' | ')}`
+          );
+        }
+      }
+
       if (!json) {
         throw new Error("No se pudo conectar al servidor");
       }
@@ -162,7 +258,7 @@ export default function LoginScreen() {
       console.error("Error en login:", error);
       Alert.alert(
         "Error de Conexión",
-        "No se pudo conectar con el servidor. Verifique su conexión."
+        error?.message || "No se pudo conectar con el servidor. Verifique su conexión."
       );
     } finally {
       setLoading(false);
@@ -274,6 +370,15 @@ export default function LoginScreen() {
                       <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
                     </>
                   )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.secondaryActionButton, loading && styles.loginButtonDisabled]}
+                  onPress={() => router.replace('/config-token')}
+                  disabled={loading}
+                >
+                  <Ionicons name="swap-horizontal" size={18} color="#fff" />
+                  <Text style={styles.secondaryActionText}>Ingresar otro token</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -401,5 +506,22 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "bold",
+  },
+  secondaryActionButton: {
+    marginTop: 10,
+    borderRadius: 12,
+    height: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  secondaryActionText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
