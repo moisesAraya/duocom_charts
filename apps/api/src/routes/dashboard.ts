@@ -1293,23 +1293,45 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
     const now = new Date();
     const startOfDay = new Date(now);
     startOfDay.setHours(0, 0, 0, 0);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const todayIso = now.toISOString().slice(0, 10);
+    const branches = parseSucursalList(req.query.sucursal).map(normalizeBranch);
 
     const limit = parseLimit(req.query.limit, 300);
+    let warning: string | undefined;
 
-    const rows = await runProcedureByNames(
-      dbConfig,
-      [
-        'SP_VENTAS_TIEMPO_REAL',
-        'SP_VTA_TIEMPO_REAL',
-        '_PvtVentasTiempoReal',
-        '_PvtVentaTiempoReal',
-      ],
-      [[startOfDay, now], [now], []],
-      { limit },
-    );
+    let rows: NormalizedRow[] = [];
+    try {
+      rows = await runProcedureByNames(
+        dbConfig,
+        [
+          'SP_VENTAS_TIEMPO_REAL',
+          'SP_VTA_TIEMPO_REAL',
+          '_PvtVentasTiempoReal',
+          '_PvtVentaTiempoReal',
+        ],
+        [[startOfDay, now], [now], []],
+        { limit },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      if (message.includes('procedure unknown') || message.includes('procedure not found')) {
+        warning = 'No existe SP de ventas en tiempo real en esta base de datos';
+      } else {
+        throw error;
+      }
+    }
 
     const data = rows
       .map(row => {
+        const sucursalRaw =
+          toString(row.sucursal) ||
+          toString(row.descripcion_sucursal) ||
+          toString(row.nombre_sucursal) ||
+          'N/A';
+        const sucursal = normalizeBranch(sucursalRaw);
+        if (branches.length && !branches.includes(sucursal)) return null;
+
         const rawFecha =
           row.fecha_hora ??
           row.fechahora ??
@@ -1337,8 +1359,88 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
           totalAcumulado,
         };
       })
-      .filter(item => item.fechaHora)
+      .filter((item): item is { fechaHora: string; totalAcumulado: number } => Boolean(item?.fechaHora))
       .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
+
+    const getVentaFecha = (row: NormalizedRow): Date | null =>
+      parseUnknownDate(row.fecha_hora) ??
+      parseUnknownDate(row.fechahora) ??
+      parseUnknownDate(row.fecha) ??
+      parseUnknownDate(row.fec_hora) ??
+      parseUnknownDate(row.fechadoc) ??
+      parseUnknownDate(row.fecha_doc) ??
+      null;
+
+    const getTicketKey = (row: NormalizedRow, fecha: Date, index: number): string => {
+      const sucursal = normalizeBranch(getSucursalFromRow(row) || 'N/A');
+      const documento =
+        toString(row.n_documento) ||
+        toString(row.documento) ||
+        toString(row.nro_documento) ||
+        toString(row.numero_documento) ||
+        toString(row.id_doc) ||
+        toString(row.id_documento) ||
+        toString(row.id_venta) ||
+        `${fecha.toISOString()}-${index}`;
+      return `${sucursal}::${documento}`;
+    };
+
+    let totalVentasDia = 0;
+    let totalVentasMes = 0;
+    let primeraVentaDia: Date | null = null;
+    const ticketsDia = new Set<string>();
+    const ticketsMes = new Set<string>();
+
+    try {
+      const ventasMesRows = await runProcedure(dbConfig, 'zResumenVentas', [startOfMonth, now], {
+        limit: 20000,
+      });
+
+      ventasMesRows.forEach((row, index) => {
+        const sucursal = normalizeBranch(getSucursalFromRow(row) || 'N/A');
+        if (branches.length && !branches.includes(sucursal)) return;
+
+        const fechaVenta = getVentaFecha(row);
+        if (!fechaVenta || Number.isNaN(fechaVenta.getTime())) return;
+
+        const ticketKey = getTicketKey(row, fechaVenta, index);
+        const totalVenta = getTotalFromRow(row);
+        const fechaIso = fechaVenta.toISOString().slice(0, 10);
+
+        totalVentasMes += totalVenta;
+        ticketsMes.add(ticketKey);
+
+        if (fechaIso === todayIso) {
+          totalVentasDia += totalVenta;
+          ticketsDia.add(ticketKey);
+          if (!primeraVentaDia || fechaVenta.getTime() < primeraVentaDia.getTime()) {
+            primeraVentaDia = fechaVenta;
+          }
+        }
+      });
+    } catch {
+      warning = warning ?? 'No se pudo calcular KPIs desde zResumenVentas';
+    }
+
+    const cantidadTicketsDia = ticketsDia.size;
+    const cantidadTicketsMes = ticketsMes.size;
+    const diasTranscurridosMes = Math.max(1, now.getDate());
+
+    const ticketPromedioDiario =
+      cantidadTicketsDia > 0 ? totalVentasDia / cantidadTicketsDia : 0;
+    const ticketPromedioMensual =
+      cantidadTicketsMes > 0 ? totalVentasMes / cantidadTicketsMes : 0;
+    const promedioTicketsDiarioMes = cantidadTicketsMes / diasTranscurridosMes;
+
+    const minutosDesdePrimeraVenta =
+      primeraVentaDia !== null
+        ? Math.max(0, (now.getTime() - primeraVentaDia.getTime()) / 60000)
+        : null;
+
+    const frecuenciaVentaMinutos =
+      minutosDesdePrimeraVenta !== null && cantidadTicketsDia > 0
+        ? minutosDesdePrimeraVenta / cantidadTicketsDia
+        : null;
 
     const ultimo = data[data.length - 1];
 
@@ -1349,23 +1451,21 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         fecha: now.toISOString().slice(0, 10),
         ultimoTotal: ultimo?.totalAcumulado ?? 0,
         ultimaActualizacion: ultimo?.fechaHora ?? null,
+        kpis: {
+          ticketPromedioDiario,
+          ticketPromedioMensual,
+          cantidadTicketsDia,
+          cantidadTicketsMes,
+          promedioTicketsDiarioMes,
+          frecuenciaVentaMinutos,
+          minutosDesdePrimeraVenta,
+          primeraVentaDia: primeraVentaDia ? primeraVentaDia.toISOString() : null,
+          diasTranscurridosMes,
+        },
       },
+      warning,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message.toLowerCase() : '';
-    if (message.includes('procedure unknown') || message.includes('procedure not found')) {
-      res.json({
-        success: true,
-        data: [],
-        meta: {
-          fecha: new Date().toISOString().slice(0, 10),
-          ultimoTotal: 0,
-          ultimaActualizacion: null,
-        },
-        warning: 'No existe SP de ventas en tiempo real en esta base de datos',
-      });
-      return;
-    }
     next(error);
   }
 });

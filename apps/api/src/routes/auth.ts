@@ -206,6 +206,13 @@ router.post('/validar-token', async (req, res, next) => {
     
     // Intentar buscar por TOKEN primero
     let clienteRow = await fetchClienteByToken(token);
+    if (!clienteRow) {
+      const rutNumber = parseRutNumber(token);
+      if (rutNumber) {
+        console.log('[auth] Token no encontrado, intentando fallback por RUT');
+        clienteRow = await fetchClienteByRut(rutNumber);
+      }
+    }
     
     if (!clienteRow) {
       console.log('[auth] Token no encontrado');
