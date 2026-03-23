@@ -91,6 +91,40 @@ const buildClienteDbConfig = (
   client: config.firebird.client ?? undefined,
 });
 
+const resolveUsuarioPassword = (row: Record<string, unknown>): string =>
+  readField(row, 'CONTRASEÑA') ||
+  readField(row, 'CONTRASENA') ||
+  readField(row, 'CLAVE') ||
+  readField(row, 'PASSWORD');
+
+const resolveUsuarioEstado = (row: Record<string, unknown>): boolean => {
+  const estado = readField(row, 'ESTADO');
+  if (!estado) return true;
+  const normalized = estado.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'activo';
+};
+
+const fetchUsuarioFromClienteDb = async (
+  clienteConfig: ClienteConfig,
+  username: string
+): Promise<Record<string, unknown> | null> => {
+  const dbConfig: FirebirdConnectionConfig = {
+    host: clienteConfig.ip || config.firebird.host || 'localhost',
+    port: clienteConfig.puerto || config.firebird.port,
+    database: clienteConfig.bdAlias,
+    user: clienteConfig.user || config.firebird.user,
+    password: clienteConfig.clave || config.firebird.password,
+    client: config.firebird.client ?? undefined,
+  };
+
+  const rows = await executeQuery<Record<string, unknown>>(
+    dbConfig,
+    'SELECT FIRST 1 * FROM "eUsuarios" WHERE UPPER("USUARIO") = UPPER(?)',
+    [username]
+  );
+  return rows[0] ?? null;
+};
+
 /** Busca un cliente activo por RUT en la BD central (DUOCOMAPPS). */
 const fetchClienteByRut = async (
   rutNumber: number
@@ -294,6 +328,23 @@ router.post('/login', apiKeyMiddleware, async (req, res, next) => {
     // Usar exactamente la configuración resuelta desde DUOCOMAPPS
     // (IP, PUERTO, BDALIAS), sin forzar rutas locales.
     console.log(`[auth] Login para usuario ${username} en BDALIAS: ${clienteConfig.bdAlias}`);
+
+    const usuarioRow = await fetchUsuarioFromClienteDb(clienteConfig, username);
+    if (!usuarioRow) {
+      res.status(401).json({ success: false, error: 'Usuario o contraseña incorrectos' });
+      return;
+    }
+
+    if (!resolveUsuarioEstado(usuarioRow)) {
+      res.status(403).json({ success: false, error: 'Usuario inactivo' });
+      return;
+    }
+
+    const storedPassword = resolveUsuarioPassword(usuarioRow);
+    if (!storedPassword || storedPassword !== password) {
+      res.status(401).json({ success: false, error: 'Usuario o contraseña incorrectos' });
+      return;
+    }
 
     // Generar JWT con la info del cliente embebida
     const token = jwt.sign({

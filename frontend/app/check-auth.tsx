@@ -15,6 +15,7 @@ import { useRootNavigationState, useRouter } from 'expo-router';
 import {
   getUsuarioActual,
   getClienteConfig,
+  clearSession,
   logout,
 } from '@/utils/config';
 import {
@@ -40,8 +41,9 @@ export default function CheckAuthScreen() {
         const clienteConfig = await getClienteConfig();
 
         if (usuario && clienteConfig) {
-          console.log('[CheckAuth] Usuario logueado encontrado, ir a ventas');
-          router.replace('/(tabs)/ventas');
+          console.log('[CheckAuth] Usuario logueado encontrado, ir a login');
+          await clearSession();
+          router.replace('/login');
           return;
         }
 
