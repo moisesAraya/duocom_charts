@@ -1396,6 +1396,11 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       }
     }
 
+
+    // LOG DETALLADO PARA DEBUG
+    console.log('[ventas-tiempo-real] branches filtro:', branches);
+    console.log('[ventas-tiempo-real] primeras filas crudas:', rows.slice(0, 5));
+
     const data = rows
       .map(row => {
         const sucursalRaw =
@@ -1435,10 +1440,13 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         return {
           fechaHora: fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : '',
           totalAcumulado,
+          sucursalDebug: sucursalRaw,
         };
       })
-      .filter((item): item is { fechaHora: string; totalAcumulado: number } => Boolean(item?.fechaHora))
+      .filter((item): item is { fechaHora: string; totalAcumulado: number; sucursalDebug: string } => Boolean(item?.fechaHora))
       .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
+
+    console.log('[ventas-tiempo-real] data final enviada:', data.slice(0, 5));
 
     const getVentaFecha = (row: NormalizedRow): Date | null =>
       parseUnknownDate(row.fecha_hora) ??
