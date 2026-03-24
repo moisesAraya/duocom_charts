@@ -223,11 +223,7 @@ export default function VentasScreen() {
   ========================= */
 
   const baseRequestParams = useMemo(() => {
-    const { sucursales: _sucursales, ...rest } = requestParams as Record<
-      string,
-      string
-    >;
-    return rest;
+    return requestParams as Record<string, string>;
   }, [requestParams]);
 
   const medioPagoParams = useMemo(() => {
@@ -261,7 +257,9 @@ export default function VentasScreen() {
           .filter((r: any) => r)
           .map((r: any) => ({
             grupo: String(r.grupo || r.Grupo || r.GRUPO || "").trim(),
-            monto: toNumber(r.monto || r.Monto || r.MONTO),
+            monto: toNumber(
+              r.monto || r.Monto || r.MONTO || r.total || r.Total || r.TOTAL,
+            ),
           })),
       );
     } catch {
@@ -1517,13 +1515,26 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
             ).trim();
 
             const dia = Number(
-              row["Día"] || row["Dia"] || row["DIA"] || row["dia"] || 0,
+              row["Día"] ||
+                row["Dia"] ||
+                row["DIA"] ||
+                row["dia"] ||
+                row["dia_mes"] ||
+                row["dia_del_mes"] ||
+                row["DIA_MES"] ||
+                row["DIA_DEL_MES"] ||
+                row["day"] ||
+                0,
             );
 
             const total = Number(
               row["Total"] ||
                 row["TOTAL"] ||
                 row["total"] ||
+                row["total_dia"] ||
+                row["TOTAL_DIA"] ||
+                row["total_venta"] ||
+                row["TOTAL_VENTA"] ||
                 row["Monto"] ||
                 row["MONTO"] ||
                 row["monto"] ||

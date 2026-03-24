@@ -14,6 +14,7 @@ import { API_CONFIG, api } from '@/constants/api';
 import { ChartCard } from '@/components/dashboard/chart-card';
 import { FiltersPanel } from '@/components/dashboard/filters-panel';
 import { ScreenShell } from '@/components/dashboard/screen-shell';
+import { useDashboardFilters } from '@/components/dashboard/filters-context';
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import {
@@ -51,9 +52,19 @@ const compactProductLabel = (value: string): string => {
   return truncateLabel(clean, 14);
 };
 
+const toNumber = (value: unknown): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^\d.-]/g, ''));
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+};
+
 export default function InventarioScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(280, width - 40);
+  const { requestParams = {} } = useDashboardFilters();
 
   const [loadingInventario, setLoadingInventario] = useState(true);
   const [loadingRotacion, setLoadingRotacion] = useState(true);
@@ -68,8 +79,16 @@ export default function InventarioScreen() {
       setLoadingInventario(true);
       setErrors([]);
       try {
-        const response = await api.get('/api/dashboard/inventario-valorizado');
-        setInventario(response.data?.data ?? []);
+        const response = await api.get('/api/dashboard/inventario-valorizado', {
+          params: requestParams,
+        });
+        const rows = response.data?.data ?? [];
+        setInventario(
+          rows.map((row: any) => ({
+            producto: String(row.producto ?? ''),
+            total_venta: toNumber(row.total_venta ?? row.total ?? row.monto),
+          })),
+        );
       } catch (error) {
         setInventario([]);
         setErrors(current => [...current, `Inventario sin respuesta (${API_CONFIG.BASE_URL}).`]);
@@ -79,15 +98,23 @@ export default function InventarioScreen() {
     };
 
     void loadInventario();
-  }, []);
+  }, [requestParams]);
 
   useEffect(() => {
     const loadRotacion = async () => {
       setLoadingRotacion(true);
       setErrors([]);
       try {
-        const response = await api.get('/api/dashboard/productos-rotacion');
-        setRotacion(response.data?.data ?? []);
+        const response = await api.get('/api/dashboard/productos-rotacion', {
+          params: requestParams,
+        });
+        const rows = response.data?.data ?? [];
+        setRotacion(
+          rows.map((row: any) => ({
+            producto: String(row.producto ?? ''),
+            rotacion: toNumber(row.rotacion ?? row.cantidad ?? row.total),
+          })),
+        );
       } catch (error) {
         setRotacion([]);
         setErrors(current => [...current, 'Rotacion sin respuesta.']);
@@ -97,15 +124,23 @@ export default function InventarioScreen() {
     };
 
     void loadRotacion();
-  }, []);
+  }, [requestParams]);
 
   useEffect(() => {
     const loadRentabilidad = async () => {
       setLoadingRentabilidad(true);
       setErrors([]);
       try {
-        const response = await api.get('/api/dashboard/rentabilidad-productos');
-        setRentabilidad(response.data?.data ?? []);
+        const response = await api.get('/api/dashboard/rentabilidad-productos', {
+          params: requestParams,
+        });
+        const rows = response.data?.data ?? [];
+        setRentabilidad(
+          rows.map((row: any) => ({
+            producto: String(row.producto ?? ''),
+            rentabilidad: toNumber(row.rentabilidad ?? row.contrib ?? row.total),
+          })),
+        );
       } catch (error) {
         setRentabilidad([]);
         setErrors(current => [...current, 'Rentabilidad sin respuesta.']);
@@ -115,7 +150,7 @@ export default function InventarioScreen() {
     };
 
     void loadRentabilidad();
-  }, []);
+  }, [requestParams]);
 
   const inventarioLabels = useMemo(
     () => (inventario || []).slice(0, 8).map(item => item.producto),

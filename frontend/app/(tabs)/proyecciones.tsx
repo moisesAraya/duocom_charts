@@ -39,6 +39,15 @@ interface IvaRow {
   iva_estimado: number;
 }
 
+const toNumber = (value: unknown): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^\d.-]/g, ''));
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+};
+
 export default function ProyeccionesScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(280, width - 40);
@@ -51,6 +60,7 @@ export default function ProyeccionesScreen() {
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [enabledSeries, setEnabledSeries] = useState({ real: true, proyectado: true });
 
 
   const yearOptions = useMemo(() => buildYearOptions(8), []);
@@ -75,7 +85,14 @@ export default function ProyeccionesScreen() {
         const nextErrors: string[] = [];
 
         if (ventasResponse.status === 'fulfilled') {
-          setProyeccionVentas(ventasResponse.value.data?.data ?? []);
+          const rows = ventasResponse.value.data?.data ?? [];
+          setProyeccionVentas(
+            rows.map((row: any) => ({
+              dia: Number(row.dia ?? row.Dia ?? row.DIA ?? 0),
+              ventas: toNumber(row.ventas ?? row.Ventas ?? row.TOTAL ?? row.total ?? 0),
+              proyeccion: toNumber(row.proyeccion ?? row.Proyeccion ?? row.PROYECCION ?? 0),
+            })),
+          );
         } else {
           setProyeccionVentas([]);
           nextErrors.push('Proyeccion ventas sin respuesta.');
@@ -103,27 +120,40 @@ export default function ProyeccionesScreen() {
 
   const proyeccionChart = useMemo(() => {
     const labels = proyeccionVentas.map(item => item.dia.toString());
+    const datasets = [] as {
+      data: number[];
+      color: (opacity?: number) => string;
+      strokeWidth: number;
+      propsForDots: { r: string; strokeWidth: string; stroke: string; fill: string };
+    }[];
+    const legend: string[] = [];
+
+    if (enabledSeries.real) {
+      datasets.push({
+        data: proyeccionVentas.map(item => item.ventas ?? 0),
+        color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+        strokeWidth: 3,
+        propsForDots: { r: '6', strokeWidth: '2', stroke: 'rgba(59, 130, 246, 1)', fill: 'rgba(59, 130, 246, 1)' },
+      });
+      legend.push('Real');
+    }
+
+    if (enabledSeries.proyectado) {
+      datasets.push({
+        data: proyeccionVentas.map(item => item.proyeccion ?? 0),
+        color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+        strokeWidth: 3,
+        propsForDots: { r: '6', strokeWidth: '2', stroke: 'rgba(16, 185, 129, 1)', fill: 'rgba(16, 185, 129, 1)' },
+      });
+      legend.push('Proyectado');
+    }
+
     return {
       labels: sparsifyLabels(labels, 8),
-      datasets: [
-        {
-          data: proyeccionVentas.map(item => item.ventas ?? 0),
-          // Usa la opacidad que pide la librería para que la línea y el dot sean del color correcto
-          color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-          strokeWidth: 3,
-          // Color del dot para que el circulito coincida con la línea
-          propsForDots: { r: '6', strokeWidth: '2', stroke: 'rgba(59, 130, 246, 1)', fill: 'rgba(59, 130, 246, 1)' },
-        },
-        {
-          data: proyeccionVentas.map(item => item.proyeccion ?? 0),
-          color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-          strokeWidth: 3,
-          propsForDots: { r: '6', strokeWidth: '2', stroke: 'rgba(16, 185, 129, 1)', fill: 'rgba(16, 185, 129, 1)' },
-        },
-      ],
-      legend: ['Real', 'Proyectado'],
+      datasets,
+      legend,
     };
-  }, [proyeccionVentas]);
+  }, [proyeccionVentas, enabledSeries]);
 
   const ivaResumen = iva[0];
 
@@ -164,6 +194,52 @@ export default function ProyeccionesScreen() {
                 </Pressable>
               </View>
             </View>
+          </View>
+          <View style={styles.seriesRow}>
+            <Pressable
+              onPress={() =>
+                setEnabledSeries((prev) => ({
+                  ...prev,
+                  real: !prev.real,
+                }))
+              }
+              style={[
+                styles.seriesChip,
+                enabledSeries.real ? styles.seriesChipActive : styles.seriesChipInactive,
+                enabledSeries.real ? styles.seriesChipBlue : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.seriesChipText,
+                  enabledSeries.real ? styles.seriesChipTextActive : styles.seriesChipTextInactive,
+                ]}
+              >
+                Real
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() =>
+                setEnabledSeries((prev) => ({
+                  ...prev,
+                  proyectado: !prev.proyectado,
+                }))
+              }
+              style={[
+                styles.seriesChip,
+                enabledSeries.proyectado ? styles.seriesChipActive : styles.seriesChipInactive,
+                enabledSeries.proyectado ? styles.seriesChipGreen : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.seriesChipText,
+                  enabledSeries.proyectado ? styles.seriesChipTextActive : styles.seriesChipTextInactive,
+                ]}
+              >
+                Proyectado
+              </Text>
+            </Pressable>
           </View>
           <ChartCard
             title="Proyeccion ventas mes"
@@ -326,6 +402,40 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111",
     marginBottom: 16,
+  },
+  seriesRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 8,
+  },
+  seriesChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+  },
+  seriesChipActive: {
+    backgroundColor: '#F0F7FF',
+  },
+  seriesChipInactive: {
+    backgroundColor: '#F5F5F5',
+    borderColor: '#E0E0E0',
+  },
+  seriesChipBlue: {
+    borderColor: '#3B82F6',
+  },
+  seriesChipGreen: {
+    borderColor: '#10B981',
+  },
+  seriesChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  seriesChipTextActive: {
+    color: '#111',
+  },
+  seriesChipTextInactive: {
+    color: '#999',
   },
   fieldLabel: {
     fontSize: 12,

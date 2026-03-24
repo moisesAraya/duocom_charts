@@ -77,7 +77,7 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
   }, [sucursales]);
 
   const requestParams = useMemo(() => ({
-    sucursales: selectedSucursales.join(','),
+    sucursal: selectedSucursales.join(','),
   }), [selectedSucursales]);
 
   const value = useMemo(

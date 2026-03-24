@@ -265,8 +265,24 @@ export const runProcedure = async (
   options?: { limit?: number; forceQuote?: boolean }
 ): Promise<NormalizedRow[]> => {
   const sql = buildProcedureSql(name, params, options?.limit, options?.forceQuote);
-  const rows = await query<Record<string, unknown>>(sql, params, dbConfig);
-  return rows.map(normalizeRow);
+  try {
+    const rows = await query<Record<string, unknown>>(sql, params, dbConfig);
+    return rows.map(normalizeRow);
+  } catch (error) {
+    const safeParams = params.map((value) =>
+      value instanceof Date
+        ? value.toISOString()
+        : typeof value === 'bigint'
+          ? value.toString()
+          : value
+    );
+    console.error('[firebird] runProcedure failed', {
+      name,
+      sql,
+      params: safeParams,
+    });
+    throw error;
+  }
 };
 
 /**
