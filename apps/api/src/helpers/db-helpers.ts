@@ -285,6 +285,7 @@ export const runProcedure = async (
     return value;
   });
   const sql = buildProcedureSql(name, params, options?.limit, options?.forceQuote);
+  console.log('[runProcedure][DEBUG] SQL generado:', { sql, normalizedParams, name, params });
   try {
     const rows = await query<Record<string, unknown>>(sql, normalizedParams, dbConfig);
     return rows.map(normalizeRow);
