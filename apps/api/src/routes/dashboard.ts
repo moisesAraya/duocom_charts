@@ -164,8 +164,16 @@ const endOfIsoWeek = (date: Date): Date => {
   return end;
 };
 
-const getIsoWeekLabel = (date: Date): string => {
-  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+const coerceDate = (value: unknown): Date | null => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const candidate = new Date(String(value));
+  return Number.isNaN(candidate.getTime()) ? null : candidate;
+};
+
+const getIsoWeekLabel = (date: Date | string | number): string => {
+  const normalized = coerceDate(date);
+  if (!normalized) return '';
+  const target = new Date(Date.UTC(normalized.getFullYear(), normalized.getMonth(), normalized.getDate()));
   const dayNr = (target.getUTCDay() + 6) % 7;
   target.setUTCDate(target.getUTCDate() - dayNr + 3);
   const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
@@ -175,8 +183,11 @@ const getIsoWeekLabel = (date: Date): string => {
   return `${target.getUTCFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
 };
 
-const getMonthLabel = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+const getMonthLabel = (date: Date | string | number): string => {
+  const normalized = coerceDate(date);
+  if (!normalized) return '';
+  return `${normalized.getFullYear()}-${String(normalized.getMonth() + 1).padStart(2, '0')}`;
+};
 
 const isMissingProcedureError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message.toLowerCase() : '';

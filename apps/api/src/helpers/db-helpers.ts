@@ -292,6 +292,21 @@ export const runProcedure = async (
     const rows = await query<Record<string, unknown>>(sql, normalizedParams, dbConfig);
     return rows.map(normalizeRow);
   } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : '';
+    if (
+      !options?.forceQuote &&
+      (message.includes('procedure unknown') ||
+        message.includes('procedure not found') ||
+        message.includes('table unknown'))
+    ) {
+      try {
+        const quotedSql = buildProcedureSql(name, params, options?.limit, true);
+        const rows = await query<Record<string, unknown>>(quotedSql, normalizedParams, dbConfig);
+        return rows.map(normalizeRow);
+      } catch (retryError) {
+        // continue to log original error below
+      }
+    }
     const safeParams = normalizedParams.map((value) =>
       value instanceof Date
         ? value.toISOString()
@@ -299,10 +314,12 @@ export const runProcedure = async (
           ? value.toString()
           : value
     );
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error('[firebird] runProcedure failed', {
       name,
       sql,
       params: safeParams,
+      error: errorMessage,
     });
     throw error;
   }
