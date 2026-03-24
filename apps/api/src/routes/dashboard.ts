@@ -33,6 +33,15 @@ import {
 
 const router = Router();
 
+// Middleware para loguear dbConfig en cada request del dashboard
+router.use((req, res, next) => {
+  try {
+    const dbConfig = req.dbConfig;
+    console.log('[DASHBOARD][dbConfig]', dbConfig);
+  } catch {}
+  next();
+});
+
 /* ═══════════════════════════════════════════
    Tipos y helpers locales (específicos del dashboard)
 ═══════════════════════════════════════════ */
@@ -1382,6 +1391,13 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     let rows: NormalizedRow[] = [];
     try {
+      console.log('[ventas-tiempo-real][DEBUG] Llamando SP_VENTAS_TIEMPO_REAL con:', {
+        dbConfig,
+        params: [startOfDay, now],
+        limit,
+        startOfDay,
+        now
+      });
       rows = await runProcedure(
         dbConfig,
         'SP_VENTAS_TIEMPO_REAL',
