@@ -259,6 +259,7 @@ const getRotacionRows = async (
 router.get('/sucursales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
+    console.log('[ventas-tiempo-real] dbConfig:', dbConfig);
     const rows = await query<Record<string, unknown>>(
       'SELECT * FROM "eSucursales"',
       [],
