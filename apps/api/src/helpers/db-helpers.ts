@@ -240,8 +240,13 @@ export const buildProcedureSql = (
   params: unknown[],
   limit?: number
 ): string => {
-  const isSimpleIdentifier = /^[A-Za-z_][A-Za-z0-9_$]*$/.test(name);
-  const identifier = isSimpleIdentifier ? name : `"${name.replace(/"/g, '""')}"`;
+  // Firebird no acepta identificadores sin comillas que inicien con "_".
+  const isSimpleIdentifier = /^[A-Za-z][A-Za-z0-9_$]*$/.test(name);
+  const needsUppercaseQuote = !isSimpleIdentifier && name.startsWith('_');
+  const quotedName = needsUppercaseQuote ? name.toUpperCase() : name;
+  const identifier = isSimpleIdentifier
+    ? name
+    : `"${quotedName.replace(/"/g, '""')}"`;
 
   if (!params.length) {
     return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM ${identifier}`;

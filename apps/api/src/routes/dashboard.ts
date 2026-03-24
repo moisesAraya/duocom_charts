@@ -343,12 +343,25 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
-    const rows = await runProcedureByNames(
-      dbConfig,
-      ['SQL_TopNVentasPorGrupo', 'X_RetProdsXGrupo'],
-      [[start, end], [start], []],
-      { limit: 5000 }
-    );
+    let rows: NormalizedRow[] = [];
+    try {
+      rows = await runProcedureByNames(
+        dbConfig,
+        ['SQL_TopNVentasPorGrupo', 'X_RetProdsXGrupo'],
+        [[start, end], [start], []],
+        { limit: 5000 }
+      );
+    } catch (error) {
+      if (isMissingProcedureError(error)) {
+        res.json({
+          success: true,
+          data: [],
+          warning: 'No existe SP de ventas por grupo en esta base de datos',
+        });
+        return;
+      }
+      throw error;
+    }
 
     const totals = new Map<string, number>();
     for (const row of rows) {
@@ -1137,11 +1150,28 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
 
     console.log(`[dashboard] analisis-ventas-mensual: ano=${ano}, mes=${mes}`);
 
-    const rows = await runProcedureByNames(
-      dbConfig,
-      ['Graf_VtaMes_Suc', 'GRAF_VTA_MES_SUC', 'GRAF_VTAMES_SUC'],
-      [[ano, mes]]
-    );
+    let rows: NormalizedRow[] = [];
+    try {
+      rows = await runProcedureByNames(
+        dbConfig,
+        ['Graf_VtaMes_Suc', 'GRAF_VTA_MES_SUC', 'GRAF_VTAMES_SUC'],
+        [[ano, mes]]
+      );
+    } catch (error) {
+      if (isMissingProcedureError(error)) {
+        res.json({
+          success: true,
+          data: {
+            ano,
+            mes,
+            series: [],
+          },
+          warning: 'No existe SP Graf_VtaMes_Suc en esta base de datos',
+        });
+        return;
+      }
+      throw error;
+    }
 
     const seriesMap = new Map<number, any[]>();
     rows.forEach(row => {
@@ -1217,11 +1247,24 @@ router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
 
     console.log(`[dashboard] graf-vta-mes-suc: ano=${ano}, mes=${mes}`);
 
-    const rows = await runProcedureByNames(
-      dbConfig,
-      ['Graf_VtaMes_Suc', 'GRAF_VTA_MES_SUC', 'GRAF_VTAMES_SUC'],
-      [[ano, mes]]
-    );
+    let rows: NormalizedRow[] = [];
+    try {
+      rows = await runProcedureByNames(
+        dbConfig,
+        ['Graf_VtaMes_Suc', 'GRAF_VTA_MES_SUC', 'GRAF_VTAMES_SUC'],
+        [[ano, mes]]
+      );
+    } catch (error) {
+      if (isMissingProcedureError(error)) {
+        res.json({
+          success: true,
+          data: [],
+          warning: 'No existe SP Graf_VtaMes_Suc en esta base de datos',
+        });
+        return;
+      }
+      throw error;
+    }
 
     console.log(`[dashboard] graf-vta-mes-suc: ${rows.length} filas obtenidas`);
     if (rows.length > 0) {
