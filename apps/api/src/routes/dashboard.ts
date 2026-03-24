@@ -1357,21 +1357,16 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     let rows: NormalizedRow[] = [];
     try {
-      rows = await runProcedureByNames(
+      rows = await runProcedure(
         dbConfig,
-        [
-          'SP_VENTAS_TIEMPO_REAL',
-          'SP_VTA_TIEMPO_REAL',
-          '_PvtVentasTiempoReal',
-          '_PvtVentaTiempoReal',
-        ],
-        [[startOfDay, now], [now], []],
+        'SP_VENTAS_TIEMPO_REAL',
+        [startOfDay, now],
         { limit },
       );
     } catch (error) {
       const message = error instanceof Error ? error.message.toLowerCase() : '';
       if (message.includes('procedure unknown') || message.includes('procedure not found')) {
-        warning = 'No existe SP de ventas en tiempo real en esta base de datos';
+        warning = 'No existe SP_VENTAS_TIEMPO_REAL en esta base de datos';
       } else {
         throw error;
       }
@@ -1400,6 +1395,8 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
             : rawFecha
               ? new Date(String(rawFecha))
               : null;
+
+        if (!fecha || Number.isNaN(fecha.getTime()) || fecha.getTime() > now.getTime()) return null;
 
         const totalAcumulado =
           toNumber(row.total_acumulado) ||
@@ -1456,7 +1453,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         if (branches.length && !branches.includes(sucursal)) return;
 
         const fechaVenta = getVentaFecha(row);
-        if (!fechaVenta || Number.isNaN(fechaVenta.getTime())) return;
+        if (!fechaVenta || Number.isNaN(fechaVenta.getTime()) || fechaVenta.getTime() > now.getTime()) return;
 
         const ticketKey = getTicketKey(row, fechaVenta, index);
         const totalVenta = getTotalFromRow(row);
