@@ -238,11 +238,12 @@ export const uniqueList = (values: string[]): string[] =>
 export const buildProcedureSql = (
   name: string,
   params: unknown[],
-  limit?: number
+  limit?: number,
+  forceQuote?: boolean
 ): string => {
   // Firebird no acepta identificadores sin comillas que inicien con "_".
   const isSimpleIdentifier = /^[A-Za-z][A-Za-z0-9_$]*$/.test(name);
-  const needsQuote = !isSimpleIdentifier || name.startsWith('_');
+  const needsQuote = Boolean(forceQuote) || !isSimpleIdentifier || name.startsWith('_');
   const identifier = needsQuote
     ? `"${name.replace(/"/g, '""')}"`
     : name;
@@ -261,9 +262,9 @@ export const runProcedure = async (
   dbConfig: FirebirdConnectionConfig,
   name: string,
   params: unknown[] = [],
-  options?: { limit?: number }
+  options?: { limit?: number; forceQuote?: boolean }
 ): Promise<NormalizedRow[]> => {
-  const sql = buildProcedureSql(name, params, options?.limit);
+  const sql = buildProcedureSql(name, params, options?.limit, options?.forceQuote);
   const rows = await query<Record<string, unknown>>(sql, params, dbConfig);
   return rows.map(normalizeRow);
 };
@@ -277,7 +278,7 @@ export const runProcedureWithFallbacks = async (
   dbConfig: FirebirdConnectionConfig,
   name: string,
   paramSets: unknown[][],
-  options?: { limit?: number }
+  options?: { limit?: number; forceQuote?: boolean }
 ): Promise<NormalizedRow[]> => {
   let lastError: unknown;
 
@@ -306,7 +307,7 @@ export const runProcedureByNames = async (
   dbConfig: FirebirdConnectionConfig,
   names: string[],
   paramSets: unknown[][],
-  options?: { limit?: number }
+  options?: { limit?: number; forceQuote?: boolean }
 ): Promise<NormalizedRow[]> => {
   let lastError: unknown;
 
@@ -321,6 +322,17 @@ export const runProcedureByNames = async (
         message.includes('procedure not found') ||
         message.includes('table unknown')
       ) {
+        if (/[a-z]/.test(name)) {
+          try {
+            return await runProcedureWithFallbacks(dbConfig, name, paramSets, {
+              ...options,
+              forceQuote: true,
+            });
+          } catch (quotedError) {
+            lastError = quotedError;
+            continue;
+          }
+        }
         lastError = error;
         continue;
       }
