@@ -1195,6 +1195,9 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
       throw error;
     }
 
+    const hoy = new Date();
+    const esMesActual = ano === hoy.getFullYear() && mes === (hoy.getMonth() + 1);
+    const diaActual = hoy.getDate();
     const seriesMap = new Map<number, any[]>();
     rows.forEach(row => {
       const idSucursal = toNumber(
@@ -1206,6 +1209,7 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
         row['id# sucursal']
       );
       const dia = toNumber(row['Día'] || row['DIA'] || row['dia']);
+      if (esMesActual && dia > diaActual) return; // Filtrar días futuros
       const monto = toNumber(row['Monto'] || row['MONTO'] || row['monto']) / 1000000;
       if (!seriesMap.has(idSucursal)) {
         seriesMap.set(idSucursal, []);
