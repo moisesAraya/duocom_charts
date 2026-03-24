@@ -251,7 +251,19 @@ export const buildProcedureSql = (
   if (!params.length) {
     return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM ${identifier}`;
   }
-  const placeholders = params.map(() => '?').join(', ');
+  const placeholders = params
+    .map((value) => {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        const hasTime =
+          value.getHours() !== 0 ||
+          value.getMinutes() !== 0 ||
+          value.getSeconds() !== 0 ||
+          value.getMilliseconds() !== 0;
+        return hasTime ? '?' : 'CAST(? AS DATE)';
+      }
+      return '?';
+    })
+    .join(', ');
   return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM ${identifier}(${placeholders})`;
 };
 
@@ -264,12 +276,28 @@ export const runProcedure = async (
   params: unknown[] = [],
   options?: { limit?: number; forceQuote?: boolean }
 ): Promise<NormalizedRow[]> => {
+  const normalizedParams = params.map((value) => {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      const hasTime =
+        value.getHours() !== 0 ||
+        value.getMinutes() !== 0 ||
+        value.getSeconds() !== 0 ||
+        value.getMilliseconds() !== 0;
+      if (!hasTime) {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    return value;
+  });
   const sql = buildProcedureSql(name, params, options?.limit, options?.forceQuote);
   try {
-    const rows = await query<Record<string, unknown>>(sql, params, dbConfig);
+    const rows = await query<Record<string, unknown>>(sql, normalizedParams, dbConfig);
     return rows.map(normalizeRow);
   } catch (error) {
-    const safeParams = params.map((value) =>
+    const safeParams = normalizedParams.map((value) =>
       value instanceof Date
         ? value.toISOString()
         : typeof value === 'bigint'
