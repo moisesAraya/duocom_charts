@@ -261,7 +261,7 @@ export const buildProcedureSql = (
   const placeholders = params
     .map((value) => {
       if (value instanceof Date && !Number.isNaN(value.getTime())) {
-        return 'CAST(? AS DATE)';
+        return 'CAST(? AS TIMESTAMP)';
       }
       return '?';
     })
