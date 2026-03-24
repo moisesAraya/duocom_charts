@@ -1401,6 +1401,32 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
     console.log('[ventas-tiempo-real] branches filtro:', branches);
     console.log('[ventas-tiempo-real] primeras filas crudas:', rows.slice(0, 5));
 
+
+    // Coincidencia flexible de sucursal
+    let sucursalesDisponibles = Array.from(new Set(rows.map(row => {
+      return (
+        toString(row.sucursal) ||
+        toString(row.descripcion_sucursal) ||
+        toString(row.nombre_sucursal) ||
+        'N/A'
+      ).toLowerCase().trim();
+    })));
+
+    let branchesLower = branches.map(b => b.toLowerCase().trim());
+
+    // Si el filtro no coincide exactamente, buscar por substring
+    if (branchesLower.length && sucursalesDisponibles.length) {
+      const coincidencias = sucursalesDisponibles.filter(suc =>
+        branchesLower.some(filtro => suc.includes(filtro) || filtro.includes(suc))
+      );
+      if (coincidencias.length === 1) {
+        branchesLower = [coincidencias[0]];
+      } else if (coincidencias.length === 0) {
+        // Si no hay coincidencias, mostrar todo (no filtrar)
+        branchesLower = [];
+      }
+    }
+
     const data = rows
       .map(row => {
         const sucursalRaw =
@@ -1411,7 +1437,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         const sucursalKey = normalizeBranch(sucursalRaw);
         const sucursalResolved = sucursalNameById.get(sucursalKey) ?? sucursalRaw;
         const sucursal = normalizeBranch(sucursalResolved);
-        if (branches.length && !branches.includes(sucursal)) return null;
+        if (branchesLower.length && !branchesLower.includes(sucursal.toLowerCase().trim())) return null;
 
         const rawFecha =
           row.fecha_hora ??
