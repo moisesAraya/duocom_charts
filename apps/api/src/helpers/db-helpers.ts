@@ -242,11 +242,10 @@ export const buildProcedureSql = (
 ): string => {
   // Firebird no acepta identificadores sin comillas que inicien con "_".
   const isSimpleIdentifier = /^[A-Za-z][A-Za-z0-9_$]*$/.test(name);
-  const needsUppercaseQuote = !isSimpleIdentifier && name.startsWith('_');
-  const quotedName = needsUppercaseQuote ? name.toUpperCase() : name;
-  const identifier = isSimpleIdentifier
-    ? name
-    : `"${quotedName.replace(/"/g, '""')}"`;
+  const needsQuote = !isSimpleIdentifier || name.startsWith('_');
+  const identifier = needsQuote
+    ? `"${name.replace(/"/g, '""')}"`
+    : name;
 
   if (!params.length) {
     return `SELECT ${limit ? `FIRST ${limit} ` : ''}* FROM ${identifier}`;
