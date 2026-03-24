@@ -164,6 +164,7 @@ export const getTotalFromRow = (row: Record<string, unknown>): number =>
 
 /** Parsea un parámetro de fecha (YYYY-MM-DD). Devuelve null si es inválido. */
 export const parseDateParam = (value: unknown): Date | null => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -180,16 +181,22 @@ export const getDateRange = (
   queryParams: Record<string, unknown>
 ): { start: Date; end: Date } => {
   const now = new Date();
-  const end =
+  const rawEnd =
     parseDateParam(queryParams.hasta) ??
     parseDateParam(queryParams.to) ??
     parseDateParam(queryParams.end) ??
     now;
-  const start =
+  const rawStart =
     parseDateParam(queryParams.desde) ??
     parseDateParam(queryParams.from) ??
     parseDateParam(queryParams.start) ??
-    new Date(end.getFullYear(), end.getMonth(), end.getDate() - 30);
+    new Date(rawEnd instanceof Date ? rawEnd.getFullYear() : now.getFullYear(),
+      rawEnd instanceof Date ? rawEnd.getMonth() : now.getMonth(),
+      rawEnd instanceof Date ? rawEnd.getDate() - 30 : now.getDate() - 30);
+
+  const end = rawEnd instanceof Date ? rawEnd : new Date(String(rawEnd));
+  const start = rawStart instanceof Date ? rawStart : new Date(String(rawStart));
+
   return { start, end };
 };
 
@@ -254,12 +261,7 @@ export const buildProcedureSql = (
   const placeholders = params
     .map((value) => {
       if (value instanceof Date && !Number.isNaN(value.getTime())) {
-        const hasTime =
-          value.getHours() !== 0 ||
-          value.getMinutes() !== 0 ||
-          value.getSeconds() !== 0 ||
-          value.getMilliseconds() !== 0;
-        return hasTime ? '?' : 'CAST(? AS DATE)';
+        return 'CAST(? AS DATE)';
       }
       return '?';
     })
@@ -278,17 +280,10 @@ export const runProcedure = async (
 ): Promise<NormalizedRow[]> => {
   const normalizedParams = params.map((value) => {
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      const hasTime =
-        value.getHours() !== 0 ||
-        value.getMinutes() !== 0 ||
-        value.getSeconds() !== 0 ||
-        value.getMilliseconds() !== 0;
-      if (!hasTime) {
-        const year = value.getFullYear();
-        const month = String(value.getMonth() + 1).padStart(2, '0');
-        const day = String(value.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      }
+      const year = value.getFullYear();
+      const month = String(value.getMonth() + 1).padStart(2, '0');
+      const day = String(value.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
     return value;
   });
