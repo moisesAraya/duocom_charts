@@ -278,12 +278,8 @@ export const runProcedure = async (
   params: unknown[] = [],
   options?: { limit?: number; forceQuote?: boolean }
 ): Promise<NormalizedRow[]> => {
-  const normalizedParams = params.map((value) => {
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-    }
-    return value;
-  });
+  // NO truncar fechas a solo día: pasar el Date completo para TIMESTAMP
+  const normalizedParams = params.map((value) => value);
   const sql = buildProcedureSql(name, params, options?.limit, options?.forceQuote);
   console.log('[runProcedure][DEBUG] SQL generado:', { sql, normalizedParams, name, params });
   try {
