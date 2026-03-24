@@ -1355,6 +1355,30 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
     const limit = parseLimit(req.query.limit, 300);
     let warning: string | undefined;
 
+    const sucursalNameById = new Map<string, string>();
+    try {
+      const sucursalRows = await query<Record<string, unknown>>(
+        'SELECT * FROM "eSucursales"',
+        [],
+        dbConfig
+      );
+      sucursalRows.forEach(row => {
+        const normalized = normalizeRow(row);
+        const id =
+          toString(normalized.id_sucursal) ||
+          toString(normalized.idsucursal) ||
+          toString(normalized.id) ||
+          toString(normalized.codigo) ||
+          toString(normalized.cod_sucursal);
+        const name = getSucursalFromRow(normalized);
+        if (id && name) {
+          sucursalNameById.set(normalizeBranch(id), name);
+        }
+      });
+    } catch {
+      // Ignore lookup failures; filtering will fall back to raw values.
+    }
+
     let rows: NormalizedRow[] = [];
     try {
       rows = await runProcedure(
@@ -1379,7 +1403,9 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
           toString(row.descripcion_sucursal) ||
           toString(row.nombre_sucursal) ||
           'N/A';
-        const sucursal = normalizeBranch(sucursalRaw);
+        const sucursalKey = normalizeBranch(sucursalRaw);
+        const sucursalResolved = sucursalNameById.get(sucursalKey) ?? sucursalRaw;
+        const sucursal = normalizeBranch(sucursalResolved);
         if (branches.length && !branches.includes(sucursal)) return null;
 
         const rawFecha =
