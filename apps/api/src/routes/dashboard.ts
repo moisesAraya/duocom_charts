@@ -354,20 +354,18 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
+    const topN = parseNumber(toString(req.query.topN), 20);
     let rows: NormalizedRow[] = [];
     try {
-      rows = await runProcedureByNames(
-        dbConfig,
-        ['SQL_TopNVentasPorGrupo', 'X_RetProdsXGrupo'],
-        [[start, end], [start], []],
-        { limit: 5000 }
-      );
+      rows = await runProcedure(dbConfig, 'SQL_TopNVentasPorGrupo', [start, end, topN], {
+        limit: 5000,
+      });
     } catch (error) {
       if (isMissingProcedureError(error)) {
         res.json({
           success: true,
           data: [],
-          warning: 'No existe SP de ventas por grupo en esta base de datos',
+          warning: 'No existe SP SQL_TopNVentasPorGrupo en esta base de datos',
         });
         return;
       }
@@ -382,6 +380,9 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
             row.nombre_grupo ||
             row.descripcion_grupo ||
             row.grupo_desc ||
+            row.descripcion_corta ||
+            row.descripcion_art_serv ||
+            row.descripcion_articulo ||
             row.descripcion ||
             row.nombre
         ) || 'Sin grupo';
