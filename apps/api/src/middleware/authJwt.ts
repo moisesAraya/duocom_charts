@@ -95,6 +95,31 @@ export const authJwtMiddleware: RequestHandler = async (req, res, next) => {
       }
     }
 
+    // Fallback: usar config enviada por header si existe (x-cliente-config)
+    const clienteHeader = req.headers['x-cliente-config'];
+    if (typeof clienteHeader === 'string' && clienteHeader.trim()) {
+      try {
+        const parsed = JSON.parse(clienteHeader);
+        const rawAlias = typeof parsed.bdAlias === 'string' ? parsed.bdAlias.trim() : '';
+        const rawHost = typeof parsed.ip === 'string' ? parsed.ip.trim() : '';
+        if (rawAlias && rawHost) {
+          dbConfig = {
+            host: rawHost,
+            port: parsed.puerto || config.firebird.port,
+            database: rawAlias,
+            user: parsed.user || config.firebird.user,
+            password: parsed.clave || config.firebird.password,
+            client: config.firebird.client ?? undefined,
+          };
+          req.user = { rut: parseRutNumber(parsed.rut) || 0 };
+          req.dbConfig = dbConfig;
+          return next();
+        }
+      } catch (_headerError) {
+        // Header inválido, continuar con BD central
+      }
+    }
+
     // Fallback: usar BD central (DUOCOMAPPS.Fdb)
     dbConfig = {
       host: config.centralFirebird.host,
