@@ -1209,7 +1209,12 @@ router.get('/dashboard/analisis-ventas-mensual', async (req, res, next) => {
         row['id# sucursal']
       );
       const dia = toNumber(row['Día'] || row['DIA'] || row['dia']);
-      if (esMesActual && dia > diaActual) return; // Filtrar días futuros
+      // Filtrar días futuros SIEMPRE (no solo si es mes actual)
+      if (
+        (ano > hoy.getFullYear()) ||
+        (ano === hoy.getFullYear() && mes > (hoy.getMonth() + 1)) ||
+        (ano === hoy.getFullYear() && mes === (hoy.getMonth() + 1) && dia > diaActual)
+      ) return;
       const monto = toNumber(row['Monto'] || row['MONTO'] || row['monto']) / 1000000;
       if (!seriesMap.has(idSucursal)) {
         seriesMap.set(idSucursal, []);
@@ -1458,6 +1463,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         const sucursalKey = normalizeBranch(sucursalRaw);
         const sucursalResolved = sucursalNameById.get(sucursalKey) ?? sucursalRaw;
         const sucursal = normalizeBranch(sucursalResolved);
+        // Filtro por sucursal explícito (query param)
         if (branchesLower.length && !branchesLower.includes(sucursal.toLowerCase().trim())) return null;
 
         const rawFecha =
@@ -1488,9 +1494,10 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
           fechaHora: fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : '',
           totalAcumulado,
           sucursalDebug: sucursalRaw,
+          sucursal,
         };
       })
-      .filter((item): item is { fechaHora: string; totalAcumulado: number; sucursalDebug: string } => Boolean(item?.fechaHora))
+      .filter((item): item is { fechaHora: string; totalAcumulado: number; sucursalDebug: string; sucursal: string } => Boolean(item?.fechaHora))
       .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
 
     console.log('[ventas-tiempo-real] data final enviada:', data.slice(0, 5));
