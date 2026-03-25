@@ -122,7 +122,7 @@ export default function LoginScreen() {
         console.log('[Login] Empresa configurada encontrada:', empresaConfig.razonSocial);
         setEmpresaConfigCargada(true);
         setRazonSocial(empresaConfig.razonSocial);
-        await setClienteConfig(empresaConfig);
+        await setClienteConfig(empresaConfig as any);
       } else {
         Alert.alert(
           "Empresa no configurada",
@@ -242,7 +242,7 @@ export default function LoginScreen() {
       }
       if (json.success && json.data) {
         await setUsuarioActual(json.data);
-        await setClienteConfig(json.data.cliente);
+        await setClienteConfig(json.data.cliente as any);
         const permissionsAccepted = await AsyncStorage.getItem("permissionsAccepted");
         if (permissionsAccepted === "true") {
           // Ir directo a la app principal (tabs)
@@ -371,14 +371,16 @@ export default function LoginScreen() {
                     </>
                   )}
                 </TouchableOpacity>
+              </View>
 
-                <TouchableOpacity
-                  style={[styles.secondaryActionButton, loading && styles.loginButtonDisabled]}
-                  onPress={() => router.replace('/config-token')}
-                  disabled={loading}
+              <View style={styles.supportContainer}>
+                <Text style={styles.supportLabel}>Soporte Técnico</Text>
+                <TouchableOpacity 
+                   style={styles.supportLink}
+                   onPress={() => Alert.alert('Soporte', 'Contactando a soporte: +569 68322651')}
                 >
-                  <Ionicons name="swap-horizontal" size={18} color="#fff" />
-                  <Text style={styles.secondaryActionText}>Ingresar otro token</Text>
+                  <Ionicons name="call" size={16} color="#F97316" />
+                  <Text style={styles.supportText}>+569 68322651</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -507,21 +509,33 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-  secondaryActionButton: {
-    marginTop: 10,
-    borderRadius: 12,
-    height: 50,
+  supportContainer: {
+    marginTop: 32,
+    alignItems: 'center',
+    gap: 8,
+    paddingBottom: 20,
+  },
+  supportLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  supportLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
-  secondaryActionText: {
+  supportText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

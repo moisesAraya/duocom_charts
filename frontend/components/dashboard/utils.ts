@@ -34,10 +34,15 @@ export const parseDateInput = (value: string): Date | null => {
 };
 
 export const formatCurrency = (value: number): string =>
-  new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 }).format(value);
+  `$${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(value)}`;
 
 export const formatNumberExact = (value: number): string =>
-  new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(value);
+  new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(value);
+
+export const formatMoneyCompact = (value: number): string => {
+  const compact = formatCompact(value);
+  return compact === '0' ? '$0' : `$${compact}`;
+};
 
 export const formatCompact = (value: number): string => {
   if (!Number.isFinite(value)) {

@@ -17,10 +17,12 @@ import { ChartCard } from '@/components/dashboard/chart-card';
 import { FilterRow, buildYearOptions } from '@/components/dashboard/chart-filters';
 import { ScreenShell } from '@/components/dashboard/screen-shell';
 import { useDashboardFilters } from '@/components/dashboard/filters-context';
+import { DetailModal } from '@/components/dashboard/detail-modal';
 import {
   endOfMonth,
   formatCompact,
   formatCurrency,
+  formatMoneyCompact,
   formatDateInput,
   sparsifyLabels,
   startOfMonth,
@@ -61,6 +63,7 @@ export default function ProyeccionesScreen() {
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [enabledSeries, setEnabledSeries] = useState({ real: true, proyectado: true });
+  const [showProyModal, setShowProyModal] = useState(false);
 
 
   const yearOptions = useMemo(() => buildYearOptions(8), []);
@@ -242,25 +245,49 @@ export default function ProyeccionesScreen() {
             </Pressable>
           </View>
           <ChartCard
-            title="Proyeccion ventas mes"
-            subtitle="Linea real vs proyectada"
+            title="Proyección de ventas del mes"
+            subtitle="Ventas reales acumuladas vs. proyección lineal. Ayuda a prever el cierre de mes."
+            headerContent={
+              <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
+                <Pressable
+                  style={styles.detailButton}
+                  onPress={() => setShowProyModal(true)}
+                >
+                  <Text style={styles.detailButtonText}>
+                    Ver detalle
+                  </Text>
+                </Pressable>
+              </View>
+            }
             data={proyeccionChart}
             kind="line"
             colorRgb="59, 130, 246"
             width={chartWidth}
             height={260}
             xLabel="Dia"
-            yLabel="Ventas"
-            formatValue={formatCompact}
+            yLabel="Ventas ($)"
+            formatValue={formatMoneyCompact}
             formatDetailValue={formatCurrency}
-            formatAxisValue={formatCompact}
-            detailTrigger="button"
-            detailLabels={proyeccionVentas.map(item => item.dia.toString())}
+            formatAxisValue={formatMoneyCompact}
             scrollable
             minWidth={Math.max(chartWidth, proyeccionChart.labels.length * 28)}
             enterDelay={60}
             isEmpty={!proyeccionVentas.length}
             emptyMessage="Sin datos para proyeccion."
+            hideHint={true}
+          />
+
+          <DetailModal
+            visible={showProyModal}
+            onClose={() => setShowProyModal(false)}
+            title="Detalle de Proyección Mensual"
+            subtitle={`${proyeccionParams.desde} al ${proyeccionParams.hasta}`}
+            headers={["Día", "Real", "Proyectado"]}
+            rows={proyeccionVentas.map(r => ({
+              label: `Día ${r.dia}`,
+              values: [r.ventas, r.proyeccion]
+            }))}
+            accentColor="#3B82F6"
           />
 
           <Card title="IVA estimado" subtitle="Cierre del mes">
@@ -504,5 +531,16 @@ const styles = StyleSheet.create({
   },
   monthPillTextSelected: {
     color: "#fff",
+  },
+  detailButton: {
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  detailButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });

@@ -77,23 +77,14 @@ export async function getUsuarioActual(): Promise<Usuario | null> {
 
 
 export async function logout(): Promise<void> {
-  // Limpiar sesión del usuario
+  // Limpiar solo sesión del usuario, mantener configuración de empresa
   await AsyncStorage.multiRemove([
     STORAGE_KEYS.USUARIO_ACTUAL,
-    STORAGE_KEYS.CLIENTE_CONFIG,
     STORAGE_KEYS.token,
     STORAGE_KEYS.user,
-    STORAGE_KEYS.cliente,
     STORAGE_KEYS.SESSION_TIMESTAMP,
     STORAGE_KEYS.APP_STATE,
   ]);
-  
-  // Limpiar token de empresa
-  try {
-    await clearEmpresaToken();
-  } catch (error) {
-    console.error('[config] Error limpiando token de empresa:', error);
-  }
   
   setAuthToken(null);
 }
@@ -193,10 +184,10 @@ export const setUsuarioActual = async (user: UsuarioActual): Promise<void> => {
 };
 
 export const clearSession = async (): Promise<void> => {
+  // Solo limpiar datos de sesión de usuario
   await AsyncStorage.multiRemove([
     STORAGE_KEYS.user,
     STORAGE_KEYS.token,
-    STORAGE_KEYS.cliente,
   ]);
   setAuthToken(null);
 };

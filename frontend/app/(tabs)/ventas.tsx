@@ -18,9 +18,11 @@ import { api } from "@/constants/api";
 import { ChartCard } from "@/components/dashboard/chart-card";
 import { ScreenShell } from "@/components/dashboard/screen-shell";
 import { useDashboardFilters } from "@/components/dashboard/filters-context";
+import { DetailModal } from "@/components/dashboard/detail-modal";
 import {
   formatCompact,
   formatCurrency,
+  formatMoneyCompact,
   formatDateInput,
   sparsifyLabels,
 } from "@/components/dashboard/utils";
@@ -96,6 +98,7 @@ const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[]
     points.push({
       fechaHora: cursor.toISOString(),
       totalAcumulado: acumulado,
+      montoHora: Math.round(base + wave),
     });
 
     cursor = new Date(cursor.getTime() + 30 * 60 * 1000);
@@ -103,7 +106,7 @@ const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[]
   }
 
   if (!points.length) {
-    return [{ fechaHora: now.toISOString(), totalAcumulado: 0 }];
+    return [{ fechaHora: now.toISOString(), totalAcumulado: 0, montoHora: 0 }];
   }
 
   return points;
@@ -218,6 +221,9 @@ export default function VentasScreen() {
   const [ventasTiempoRealKpis, setVentasTiempoRealKpis] = useState<VentasTiempoRealKpis | null>(
     null,
   );
+  const [showVTRModal, setShowVTRModal] = useState(false);
+  const [showAnualesModal, setShowAnualesModal] = useState(false);
+  const [showSucursalModal, setShowSucursalModal] = useState(false);
 
   /* =========================
      DERIVED PARAMS
@@ -582,7 +588,7 @@ export default function VentasScreen() {
       ),
       datasets: [
         {
-          data: ventasSucursalRows.map((row) => row.total / 1_000_000),
+          data: ventasSucursalRows.map((row) => row.total),
           colors: ventasSucursalLabels.map(
             (label, idx) => (o: number) =>
               `rgba(${getBranchColor(label, idx)},${o})`,
@@ -594,7 +600,7 @@ export default function VentasScreen() {
   );
 
   const ventasSucursalMax = useMemo(() => {
-    const vals = ventasSucursalRows.map((r) => r.total / 1_000_000);
+    const vals = ventasSucursalRows.map((r) => r.total);
     return vals.length ? Math.max(...vals) : 0;
   }, [ventasSucursalRows]);
 
@@ -718,10 +724,10 @@ export default function VentasScreen() {
             <View style={styles.rtActionsRow}>
               <Pressable
                 style={[styles.detailButton, styles.rtSecondaryButton]}
-                onPress={() => setShowVentasTiempoRealDetalle((prev) => !prev)}
+                onPress={() => setShowVTRModal(true)}
               >
                 <Text style={[styles.detailButtonText, styles.rtSecondaryButtonText]}>
-                  {showVentasTiempoRealDetalle ? 'Ocultar detalle' : 'Ver detalle'}
+                  Ver detalle
                 </Text>
               </Pressable>
               <Pressable
@@ -737,32 +743,6 @@ export default function VentasScreen() {
             {ventasTiempoRealEsMock && (
               <Text style={styles.rtMockBadge}>Mostrando datos de prueba</Text>
             )}
-            {showVentasTiempoRealDetalle && (
-              <View style={styles.rtDetailPanel}>
-                <Text style={styles.rtDetailTitle}>Historial completo ({ventasTiempoRealDetalle.length} registros)</Text>
-                <View style={[styles.rtDetailRow, { borderBottomWidth: 2, paddingBottom: 4, marginBottom: 4 }]}>
-                  <Text style={[styles.rtDetailTime, { flex: 1, color: '#64748B' }]}>Hora</Text>
-                  <Text style={[styles.rtDetailValue, { flex: 1.2, textAlign: 'right', color: '#64748B' }]}>Venta Hora</Text>
-                  <Text style={[styles.rtDetailValue, { flex: 1.5, textAlign: 'right', color: '#64748B' }]}>Acumulado</Text>
-                </View>
-                <ScrollView
-                  style={styles.rtDetailScroll}
-                  nestedScrollEnabled
-                  showsVerticalScrollIndicator
-                >
-                  {ventasTiempoRealDetalle.map((row) => (
-                    <View key={`${row.fechaHora}-${row.total}`} style={styles.rtDetailRow}>
-                      <Text style={[styles.rtDetailTime, { flex: 1 }]}>{row.hora}</Text>
-                      <Text style={[styles.rtDetailValue, { flex: 1.2, textAlign: 'right', color: '#3B82F6' }]}>{formatCurrency(row.montoHora)}</Text>
-                      <Text style={[styles.rtDetailValue, { flex: 1.5, textAlign: 'right' }]}>{formatCurrency(row.total)}</Text>
-                    </View>
-                  ))}
-                  {!ventasTiempoRealDetalle.length && (
-                    <Text style={styles.rtDetailEmpty}>Sin movimientos para mostrar.</Text>
-                  )}
-                </ScrollView>
-              </View>
-            )}
           </View>
         }
         data={ventasTiempoRealData}
@@ -772,15 +752,28 @@ export default function VentasScreen() {
         height={260}
         xLabel="Hora"
         yLabel="Acumulado"
-        formatValue={formatCompact}
+        formatValue={formatMoneyCompact}
         formatDetailValue={formatCurrency}
-        formatAxisValue={formatCompact}
+        formatAxisValue={formatMoneyCompact}
         scrollable
         minWidth={Math.max(chartWidth, ventasTiempoReal.length * 42)}
         isLoading={loadingVentasTiempoReal}
         isEmpty={!ventasTiempoReal.length}
         detailLabels={ventasTiempoRealLabels}
         hideHint={true}
+      />
+
+      <DetailModal
+        visible={showVTRModal}
+        onClose={() => setShowVTRModal(false)}
+        title="Detalle de Ventas Tiempo Real"
+        subtitle={`Consulta realizada: ${horaConsulta}`}
+        headers={["Hora", "Venta Bloque", "Total Acum."]}
+        rows={ventasTiempoRealDetalle.map(row => ({
+          label: row.hora,
+          values: [row.montoHora, row.total]
+        }))}
+        accentColor="#10B981"
       />
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -831,10 +824,10 @@ export default function VentasScreen() {
               <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
                 <Pressable
                   style={styles.detailButton}
-                  onPress={() => setShowVentasAnualesValues(!showVentasAnualesValues)}
+                  onPress={() => setShowAnualesModal(true)}
                 >
                   <Text style={styles.detailButtonText}>
-                    {showVentasAnualesValues ? "Ocultar valores" : "Ver detalle"}
+                    Ver detalle
                   </Text>
                 </Pressable>
               </View>
@@ -846,10 +839,10 @@ export default function VentasScreen() {
           width={chartWidth}
           height={280}
           xLabel="Años"
-          yLabel="Ventas (M)"
-          formatValue={(v) => `${(v / 1_000_000).toFixed(0)}M`}
-          formatDetailValue={(v) => `${(v / 1_000_000).toFixed(2)}M`}
-          formatAxisValue={(v) => `${(v / 1_000_000).toFixed(0)}M`}
+          yLabel="Ventas ($M)"
+          formatValue={(v) => `$${(v / 1_000_000).toFixed(0)}M`}
+          formatDetailValue={(v) => `$${(v / 1_000_000).toFixed(2)}M`}
+          formatAxisValue={(v) => `$${(v / 1_000_000).toFixed(0)}M`}
           yAxisInterval={200_000_000}
           scrollable={false}
           minWidth={ventasAnualesYears.length * 60}
@@ -857,14 +850,34 @@ export default function VentasScreen() {
           isEmpty={!ventasAnuales.length || !enabledVentasAnualesBranches.length}
           detailLabels={ventasAnualesYears.map((year) => String(year))}
           detailTrigger="tap"
-          showValuesOnTop={showVentasAnualesValues}
+          showValuesOnTop={false}
           hideHint={true}
+        />
+
+        <DetailModal
+          visible={showAnualesModal}
+          onClose={() => setShowAnualesModal(false)}
+          title="Ventas por Año"
+          subtitle="Resumen anual acumulado por sucursal"
+          headers={["Año", "Venta Total"]}
+          rows={ventasAnualesYears.map(year => {
+            const total = enabledVentasAnualesBranches.reduce((acc, br) => {
+              return acc + ventasAnuales
+                .filter(r => r.anio === year && r.sucursal === br)
+                .reduce((s, r) => s + r.total, 0);
+            }, 0);
+            return {
+              label: String(year),
+              values: [total]
+            };
+          })}
         />
       </ScrollView>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <ChartCard
-          title="Ventas por sucursal"
+          title="Ventas totales por sucursal"
+          subtitle="Acumulado histórico (últimos 5 años)"
           headerContent={
             <View>
               {ventasAnualesBranches.length > 1 && (
@@ -903,10 +916,10 @@ export default function VentasScreen() {
               <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
                 <Pressable
                   style={styles.detailButton}
-                  onPress={() => setShowVentasSucursalValues(!showVentasSucursalValues)}
+                  onPress={() => setShowSucursalModal(true)}
                 >
                   <Text style={styles.detailButtonText}>
-                    {showVentasSucursalValues ? "Ocultar valores" : "Ver detalle"}
+                    Ver detalle
                   </Text>
                 </Pressable>
               </View>
@@ -918,18 +931,31 @@ export default function VentasScreen() {
           width={chartWidth}
           height={300}
           xLabel="Sucursales"
-          yLabel="Ventas (M)"
-          yAxisSuffix="M"
-          formatValue={formatCompact}
-          formatDetailValue={(v) => `${v.toFixed(0)}M`}
+          yLabel="Ventas ($M)"
+          yAxisSuffix=""
+          formatValue={formatMoneyCompact}
+          formatDetailValue={(v: number) => `$${(v / 1_000_000).toFixed(2)}M`}
+          formatAxisValue={(v: number) => `$${(v / 1_000_000).toFixed(0)}M`}
           yAxisInterval={ventasSucursalYAxisStep}
           scrollable={false}
           minWidth={Math.max(chartWidth, ventasSucursalLabels.length * 45)}
           isLoading={loadingVentasAnuales}
           isEmpty={!ventasSucursalRows.length}
           detailLabels={ventasSucursalLabels}
-          showValuesOnTop={showVentasSucursalValues}
+          showValuesOnTop={false}
           hideHint={true}
+        />
+
+        <DetailModal
+          visible={showSucursalModal}
+          onClose={() => setShowSucursalModal(false)}
+          title="Ventas por Sucursal"
+          subtitle="Acumulado histórico (últimos 5 años)"
+          headers={["Sucursal", "Venta Total"]}
+          rows={ventasSucursalRows.map(row => ({
+            label: row.sucursal,
+            values: [row.total]
+          }))}
         />
       </ScrollView>
 
@@ -1305,7 +1331,7 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                             key={`val-${anios[idx]}-${idx}`}
                             style={{ width: 90, padding: 8, textAlign: "right" }}
                           >
-                            {formatCompact(val)}
+                            {formatMoneyCompact(val)}
                           </Text>
                         ))}
                         <Text
@@ -1317,7 +1343,7 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                             color: "#3B82F6",
                           }}
                         >
-                          {formatCompact(totalMes)}
+                          {formatMoneyCompact(totalMes)}
                         </Text>
                       </View>
                     ))}
@@ -1408,7 +1434,7 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   const formatMillions2 = useCallback((v: number) => {
     const n = Number(v);
     if (!Number.isFinite(n)) return "0.00M";
-    return `${(n / 1_000_000).toFixed(2)}M`;
+    return `$${(n / 1_000_000).toFixed(2)}M`;
   }, []);
 
   useEffect(() => {
@@ -1713,14 +1739,14 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
         width={chartWidth}
         height={400}
         xLabel="Días del mes"
-        yLabel="Ventas"
+        yLabel="Ventas ($)"
         isLoading={loading}
         isEmpty={chartData.datasets.length === 0}
         hideHint
         scrollable
         minWidth={xMinWidth}
         yAxisInterval={yAxisStepM}
-        formatAxisValue={formatCompact}
+        formatAxisValue={formatMoneyCompact}
         formatDetailValue={formatCurrency}
         dotRadius={4}
       />

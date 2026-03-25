@@ -16,10 +16,19 @@ import { FiltersPanel } from '@/components/dashboard/filters-panel';
 import { ScreenShell } from '@/components/dashboard/screen-shell';
 import { useDashboardFilters } from '@/components/dashboard/filters-context';
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
+import { DetailModal } from "@/components/dashboard/detail-modal";
 import {
   formatCompact,
   formatCurrency,
+  formatMoneyCompact,
   formatNumberExact,
   sparsifyLabels,
 } from '@/components/dashboard/utils';
@@ -73,6 +82,9 @@ export default function InventarioScreen() {
   const [inventario, setInventario] = useState<InventarioRow[]>([]);
   const [rotacion, setRotacion] = useState<RotacionRow[]>([]);
   const [rentabilidad, setRentabilidad] = useState<RentabilidadRow[]>([]);
+  const [showInventarioModal, setShowInventarioModal] = useState(false);
+  const [showRotacionModal, setShowRotacionModal] = useState(false);
+  const [showRentabilidadModal, setShowRentabilidadModal] = useState(false);
 
   useEffect(() => {
     const loadInventario = async () => {
@@ -203,17 +215,29 @@ export default function InventarioScreen() {
         ) : null}
         <ChartCard
           title="Inventario valorizado"
-          subtitle="Top productos por valor"
+          subtitle="Valor monetario total en stock (Stock × Precio). Identifica dónde está concentrado el capital."
+          headerContent={
+            <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
+              <Pressable
+                style={styles.detailButton}
+                onPress={() => setShowInventarioModal(true)}
+              >
+                <Text style={styles.detailButtonText}>
+                  Ver detalle
+                </Text>
+              </Pressable>
+            </View>
+          }
           data={inventarioChart}
           kind="bar"
           colorRgb="249, 115, 22"
           width={chartWidth}
           height={280}
           xLabel="Producto"
-          yLabel="Total venta"
-          formatValue={formatCompact}
+          yLabel="Total venta ($)"
+          formatValue={formatMoneyCompact}
           formatDetailValue={formatCurrency}
-          formatAxisValue={formatCompact}
+          formatAxisValue={formatMoneyCompact}
           scrollable
           minWidth={Math.max(chartWidth, inventarioChart.labels.length * 68)}
           enterDelay={60}
@@ -221,21 +245,35 @@ export default function InventarioScreen() {
           isEmpty={!inventario.length}
           emptyMessage="Sin datos de inventario."
           detailLabels={inventarioLabels}
+          showValuesOnTop={false}
+          hideHint={true}
         />
 
         <ChartCard
           title="Rotacion de productos"
-          subtitle="Movimientos destacados"
+          subtitle="Volumen de unidades vendidas (frecuencia de salida). Útil para evitar quiebres de stock."
+          headerContent={
+            <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
+              <Pressable
+                style={styles.detailButton}
+                onPress={() => setShowRotacionModal(true)}
+              >
+                <Text style={styles.detailButtonText}>
+                  Ver detalle
+                </Text>
+              </Pressable>
+            </View>
+          }
           data={rotacionChart}
           kind="bar"
           colorRgb="59, 130, 246"
           width={chartWidth}
           height={280}
           xLabel="Producto"
-          yLabel="Rotacion"
-          formatValue={formatCompact}
-          formatDetailValue={formatNumberExact}
-          formatAxisValue={formatCompact}
+          yLabel="Rotacion ($)"
+          formatValue={formatMoneyCompact}
+          formatDetailValue={formatCurrency}
+          formatAxisValue={formatMoneyCompact}
           scrollable
           minWidth={Math.max(chartWidth, rotacionChart.labels.length * 68)}
           enterDelay={120}
@@ -243,21 +281,35 @@ export default function InventarioScreen() {
           isEmpty={!rotacion.length}
           emptyMessage="Sin datos de rotacion."
           detailLabels={rotacionLabels}
+          showValuesOnTop={false}
+          hideHint={true}
         />
 
         <ChartCard
           title="Rentabilidad de productos"
-          subtitle="Margen acumulado"
+          subtitle="Margen de contribución total (Ganancia real). Identifica qué artículos mueven la aguja."
+          headerContent={
+            <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
+              <Pressable
+                style={styles.detailButton}
+                onPress={() => setShowRentabilidadModal(true)}
+              >
+                <Text style={styles.detailButtonText}>
+                  Ver detalle
+                </Text>
+              </Pressable>
+            </View>
+          }
           data={rentabilidadChart}
           kind="bar"
           colorRgb="16, 185, 129"
           width={chartWidth}
           height={280}
           xLabel="Producto"
-          yLabel="Rentabilidad"
-          formatValue={formatCompact}
+          yLabel="Rentabilidad ($)"
+          formatValue={formatMoneyCompact}
           formatDetailValue={formatCurrency}
-          formatAxisValue={formatCompact}
+          formatAxisValue={formatMoneyCompact}
           scrollable
           minWidth={Math.max(chartWidth, rentabilidadChart.labels.length * 68)}
           enterDelay={180}
@@ -265,6 +317,47 @@ export default function InventarioScreen() {
           isEmpty={!rentabilidad.length}
           emptyMessage="Sin datos de rentabilidad."
           detailLabels={rentabilidadLabels}
+          showValuesOnTop={false}
+          hideHint={true}
+        />
+
+        <DetailModal
+          visible={showInventarioModal}
+          onClose={() => setShowInventarioModal(false)}
+          title="Inventario Valorizado"
+          subtitle="Top 20 productos por valor total en stock"
+          headers={["Producto", "Valor Stock"]}
+          rows={inventario.map(r => ({
+            label: r.producto,
+            values: [r.total_venta]
+          }))}
+          accentColor="#F97316"
+        />
+
+        <DetailModal
+          visible={showRotacionModal}
+          onClose={() => setShowRotacionModal(false)}
+          title="Rotación de Productos"
+          subtitle="Top 20 productos con mayor flujo de salida"
+          headers={["Producto", "Unidades/Venta"]}
+          rows={rotacion.map(r => ({
+            label: r.producto,
+            values: [r.rotacion]
+          }))}
+          accentColor="#3B82F6"
+        />
+
+        <DetailModal
+          visible={showRentabilidadModal}
+          onClose={() => setShowRentabilidadModal(false)}
+          title="Rentabilidad de Productos"
+          subtitle="Top 20 productos por margen acumulado"
+          headers={["Producto", "Rentabilidad"]}
+          rows={rentabilidad.map(r => ({
+            label: r.producto,
+            values: [r.rentabilidad]
+          }))}
+          accentColor="#10B981"
         />
       </>
     </ScreenShell>
@@ -278,5 +371,16 @@ const styles = StyleSheet.create({
   },
   errorBox: {
     marginBottom: 12,
+  },
+  detailButton: {
+    backgroundColor: "#3B82F6",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  detailButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });

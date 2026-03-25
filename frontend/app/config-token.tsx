@@ -85,29 +85,7 @@ export default function ConfigTokenScreen() {
     }
   };
 
-  const handleIngresarOtroToken = async () => {
-    Alert.alert(
-      'Confirmar',
-      '¿Desea cambiar la empresa y registrar otro token?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Cambiar',
-          onPress: async () => {
-            try {
-              await logout();
-              await clearEmpresaToken();
-              setToken('');
-              setEmpresaConfig('');
-              Alert.alert('Información', 'Ahora puede ingresar otro token de empresa');
-            } catch (error) {
-              Alert.alert('Error', 'No se pudo limpiar la configuración');
-            }
-          },
-        },
-      ]
-    );
-  };
+
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -200,28 +178,21 @@ export default function ConfigTokenScreen() {
                   )}
                 </TouchableOpacity>
 
-                {empresaConfig && (
-                  <TouchableOpacity
-                    style={[styles.button, styles.secondaryButton]}
-                    onPress={handleIngresarOtroToken}
-                    disabled={loading}
-                  >
-                    <Ionicons name="swap-horizontal" size={20} color="#fff" />
-                    <Text style={styles.secondaryButtonText}>Ingresar otro token</Text>
-                  </TouchableOpacity>
-                )}
+
               </View>
 
             </View>
 
             {/* Pie de página */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>
-                ¿Problemas con la configuración?
-              </Text>
-              <Text style={styles.footerSubText}>
-                Contacte al administrador de su empresa
-              </Text>
+            <View style={styles.supportContainer}>
+              <Text style={styles.supportLabel}>Soporte Técnico</Text>
+              <TouchableOpacity 
+                 style={styles.supportLink}
+                 onPress={() => Alert.alert('Soporte', 'Contactando a soporte: +569 68322651')}
+              >
+                <Ionicons name="call" size={16} color="#F97316" />
+                <Text style={styles.supportText}>+569 68322651</Text>
+              </TouchableOpacity>
             </View>
           </ScrollView>
         </LinearGradient>
@@ -363,17 +334,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#fff',
   },
-  footer: {
+  supportContainer: {
     marginTop: 40,
     alignItems: 'center',
+    gap: 8,
+    paddingBottom: 24,
   },
-  footerText: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 4,
-  },
-  footerSubText: {
-    fontSize: 12,
+  supportLabel: {
     color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  supportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  supportText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

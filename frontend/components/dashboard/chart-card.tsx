@@ -524,6 +524,8 @@ export const ChartCard = ({
                             segments={segments}
                             yAxisLabel=""
                             yAxisSuffix={yAxisSuffix ?? ""}
+                            // @ts-ignore
+                            formatYLabel={formatYLabel}
                           />
                         );
                       })()}
@@ -587,6 +589,8 @@ export const ChartCard = ({
                           segments={segments}
                           yAxisLabel=""
                           yAxisSuffix={yAxisSuffix ?? ""}
+                          // @ts-ignore
+                          formatYLabel={formatYLabel}
                         />
                       );
                     })()}
