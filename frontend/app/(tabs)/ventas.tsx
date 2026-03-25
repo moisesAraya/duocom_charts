@@ -63,6 +63,7 @@ interface GrupoVentaRow {
 interface VentaTiempoRealRow {
   fechaHora: string;
   totalAcumulado: number;
+  montoHora: number;
 }
 
 interface VentasTiempoRealKpis {
@@ -340,7 +341,8 @@ export default function VentasScreen() {
       const rows = (res.data?.data ?? [])
         .map((row: any) => ({
           fechaHora: String(row.fechaHora || row.fecha_hora || ''),
-          totalAcumulado: toNumber(row.totalAcumulado ?? row.total_acumulado),
+          montoHora: toNumber(row.montoHora ?? row.monto_hora ?? row.venta_hora ?? 0),
+          totalAcumulado: toNumber(row.totalAcumulado ?? row.total_acumulado ?? 0),
         }))
         .filter((row: VentaTiempoRealRow) => row.fechaHora);
 
@@ -461,6 +463,7 @@ export default function VentasScreen() {
           fechaHora: row.fechaHora,
           hora,
           total: row.totalAcumulado,
+          montoHora: row.montoHora,
         };
       });
   }, [ventasTiempoReal]);
@@ -737,6 +740,11 @@ export default function VentasScreen() {
             {showVentasTiempoRealDetalle && (
               <View style={styles.rtDetailPanel}>
                 <Text style={styles.rtDetailTitle}>Historial completo ({ventasTiempoRealDetalle.length} registros)</Text>
+                <View style={[styles.rtDetailRow, { borderBottomWidth: 2, paddingBottom: 4, marginBottom: 4 }]}>
+                  <Text style={[styles.rtDetailTime, { flex: 1, color: '#64748B' }]}>Hora</Text>
+                  <Text style={[styles.rtDetailValue, { flex: 1.2, textAlign: 'right', color: '#64748B' }]}>Venta Hora</Text>
+                  <Text style={[styles.rtDetailValue, { flex: 1.5, textAlign: 'right', color: '#64748B' }]}>Acumulado</Text>
+                </View>
                 <ScrollView
                   style={styles.rtDetailScroll}
                   nestedScrollEnabled
@@ -744,8 +752,9 @@ export default function VentasScreen() {
                 >
                   {ventasTiempoRealDetalle.map((row) => (
                     <View key={`${row.fechaHora}-${row.total}`} style={styles.rtDetailRow}>
-                      <Text style={styles.rtDetailTime}>{row.hora}</Text>
-                      <Text style={styles.rtDetailValue}>{formatCurrency(row.total)}</Text>
+                      <Text style={[styles.rtDetailTime, { flex: 1 }]}>{row.hora}</Text>
+                      <Text style={[styles.rtDetailValue, { flex: 1.2, textAlign: 'right', color: '#3B82F6' }]}>{formatCurrency(row.montoHora)}</Text>
+                      <Text style={[styles.rtDetailValue, { flex: 1.5, textAlign: 'right' }]}>{formatCurrency(row.total)}</Text>
                     </View>
                   ))}
                   {!ventasTiempoRealDetalle.length && (

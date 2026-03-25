@@ -33,6 +33,14 @@ import {
 
 const router = Router();
 
+/**
+ * Intenta leer un campo de un row normalizado probando varias variantes (original, minusculas, mayusculas).
+ */
+const readField = (row: any, key: string): any => {
+  if (!row) return undefined;
+  return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
+};
+
 // Middleware para loguear dbConfig en cada request del dashboard
 router.use((req, res, next) => {
   try {
@@ -1524,20 +1532,39 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
           return null;
         }
 
-        const totalAcumulado =
-          toNumber(row.total_acumulado ?? row.totalacumulado ?? row.acumulado ?? row.total ?? row.monto ?? 0);
+        const montoHora = toNumber(row.monto_hora ?? row.montohora ?? row.venta_hora ?? row.ventahora ?? 0);
+        const totalAcumulado = toNumber(row.total_acumulado ?? row.totalacumulado ?? 0);
 
         return {
-          fechaHora: fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : '',
+          fechaHora: fecha.toISOString(),
+          montoHora,
           totalAcumulado,
-          sucursalDebug: sucursalRaw,
           sucursal,
         };
       })
-      .filter((item): item is { fechaHora: string; totalAcumulado: number; sucursalDebug: string; sucursal: string } => Boolean(item?.fechaHora))
+      .filter((item): item is { fechaHora: string; montoHora: number; totalAcumulado: number; sucursal: string } => Boolean(item))
       .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
 
-    console.log('[ventas-tiempo-real] data final enviada:', data.length, 'filas');
+    // Si hay múltiples sucursales en los resultados, AGREGAR por hora para el gráfico total
+    const aggregatedDataMap = new Map<string, { fechaHora: string; montoHora: number; totalAcumulado: number }>();
+    data.forEach(item => {
+      const existing = aggregatedDataMap.get(item.fechaHora);
+      if (existing) {
+        existing.montoHora += item.montoHora;
+        existing.totalAcumulado += item.totalAcumulado;
+      } else {
+        aggregatedDataMap.set(item.fechaHora, { 
+          fechaHora: item.fechaHora, 
+          montoHora: item.montoHora, 
+          totalAcumulado: item.totalAcumulado 
+        });
+      }
+    });
+
+    const finalData = Array.from(aggregatedDataMap.values())
+      .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
+
+    console.log('[ventas-tiempo-real] data final enviada:', finalData.length, 'filas');
     if (data.length > 0) {
       console.log('[ventas-tiempo-real] Primera fila mapeada:', data[0]);
     }
@@ -1593,7 +1620,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         if (fechaIso === todayIso) {
           totalVentasDia += totalVenta;
           ticketsDia.add(ticketKey);
-          if (!primeraVentaDia || fechaVenta.getTime() < primeraVentaDia.getTime()) {
+          if (!primeraVentaDia || (fechaVenta as Date).getTime() < (primeraVentaDia as Date).getTime()) {
             primeraVentaDia = fechaVenta;
           }
         }
@@ -1614,7 +1641,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     const minutosDesdePrimeraVenta =
       primeraVentaDia !== null
-        ? Math.max(0, (now.getTime() - primeraVentaDia.getTime()) / 60000)
+        ? Math.max(0, (now.getTime() - (primeraVentaDia as Date).getTime()) / 60000)
         : null;
 
     const frecuenciaVentaMinutos =
@@ -1622,11 +1649,11 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         ? minutosDesdePrimeraVenta / cantidadTicketsDia
         : null;
 
-    const ultimo = data[data.length - 1];
+    const ultimo = finalData[finalData.length - 1];
 
     res.json({
       success: true,
-      data,
+      data: finalData,
       meta: {
         fecha: now.toISOString().slice(0, 10),
         ultimoTotal: ultimo?.totalAcumulado ?? 0,
@@ -1639,7 +1666,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
           promedioTicketsDiarioMes,
           frecuenciaVentaMinutos,
           minutosDesdePrimeraVenta,
-          primeraVentaDia: primeraVentaDia ? primeraVentaDia.toISOString() : null,
+          primeraVentaDia: primeraVentaDia ? (primeraVentaDia as Date).toISOString() : null,
           diasTranscurridosMes,
         },
       },
