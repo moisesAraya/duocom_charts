@@ -41,6 +41,19 @@ const readField = (row: any, key: string): any => {
   return row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()];
 };
 
+/**
+ * Compara de forma flexible la sucursal de una fila con los filtros seleccionados.
+ * Soporta substring matching y es insensible a mayúsculas/minúsculas.
+ */
+const isBranchMatch = (rowSucursal: string, filters: string[]): boolean => {
+  if (!filters || filters.length === 0) return true;
+  const normalizedRowSuc = (rowSucursal || 'N/A').toLowerCase().trim();
+  return filters.some(f => {
+    const nf = f.toLowerCase().trim();
+    return normalizedRowSuc.includes(nf) || nf.includes(normalizedRowSuc);
+  });
+};
+
 // Middleware para loguear dbConfig en cada request del dashboard
 router.use((req, res, next) => {
   try {
@@ -133,7 +146,7 @@ const normalizeCuentasPagarDocs = (
   rows
     .map(row => {
       const sucursal = toString(row.sucursal) || toString(row.descripcion_sucursal);
-      if (branches.length && !branches.includes(sucursal)) return null;
+      if (!isBranchMatch(sucursal, branches)) return null;
 
       const proveedor =
         toString(row.nombres_razon_social) ||
@@ -311,7 +324,7 @@ router.get('/dashboard/clientes-hora', async (req, res, next) => {
 
     for (const row of rows) {
       const sucursal = toString(row.sucursal) || 'N/A';
-      if (branches.length && !branches.includes(sucursal)) continue;
+      if (!isBranchMatch(sucursal, branches)) continue;
       const hora = toNumber(row.hora);
       const clientes =
         toNumber(row.cant_docs) || toNumber(row.n_x) || toNumber(row.ticket);
@@ -347,7 +360,7 @@ router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
 
     for (const row of rows) {
       const sucursal = toString(row.sucursal) || 'N/A';
-      if (branches.length && !branches.includes(sucursal)) continue;
+      if (!isBranchMatch(sucursal, branches)) continue;
       const medioPago = toString(row.medio_de_pago) || 'Otros';
       const monto = toNumber(row.t_bruto) || toNumber(row.total);
       const key = `${sucursal}::${medioPago}`;
@@ -373,6 +386,7 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const topN = parseNumber(toString(req.query.topN), 20);
+    const branches = parseSucursalList(req.query.sucursal);
     let rows: NormalizedRow[] = [];
     try {
       rows = await runProcedure(dbConfig, 'SQL_TopNVentasPorGrupo', [start, end, topN], {
@@ -392,6 +406,7 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
 
     const totals = new Map<string, number>();
     for (const row of rows) {
+      if (!isBranchMatch(getSucursalFromRow(row), branches)) continue;
       const group =
         toString(
           row.grupo ||
@@ -428,7 +443,7 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const years = Number.parseInt(String(req.query.years ?? '3'), 10);
-    const branches = parseSucursalList(req.query.sucursal).map(normalizeBranch);
+    const branches = parseSucursalList(req.query.sucursal);
     const rows = await getProyVentaAnualRows(dbConfig, Number.isFinite(years) ? years : 3);
     const totals = new Map<string, number>();
 
@@ -436,7 +451,7 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
     for (const row of rows) {
       const anio = toNumber(row.ano);
       const sucursal = getSucursalFromRow(row);
-      if (branches.length && !branches.includes(normalizeBranch(sucursal))) continue;
+      if (!isBranchMatch(sucursal, branches)) continue;
       const total = getTotalFromRow(row);
       const key = `${sucursal}::${anio}`;
       totals.set(key, (totals.get(key) ?? 0) + total);
@@ -502,7 +517,7 @@ router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
       const anio = toNumber(row.ano);
       if (anio !== year) continue;
       const sucursal = getSucursalFromRow(row);
-      if (branches.length && !branches.includes(sucursal)) continue;
+      if (!isBranchMatch(sucursal, branches)) continue;
       const mes = toNumber(row.mes);
       const total = getTotalFromRow(row);
       const key = `${sucursal}::${mes}`;
@@ -537,7 +552,7 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
       saldo: toNumber(row.saldo),
       documento: toString(row.n_documento),
       medio_pago: toString(row.descripcion_medio_de_pago),
-    })).filter(row => (branches.length ? branches.includes(row.sucursal) : true));
+    })).filter(row => (branches.length ? isBranchMatch(row.sucursal, branches) : true));
 
     res.json({ success: true, data });
   } catch (error) {
@@ -599,7 +614,7 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
             toNumber(row.stock_maximo),
         };
       })
-      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
+      .filter(row => (branches.length ? isBranchMatch(row.sucursal, branches) : true))
       .map(row => ({
         producto: row.producto,
         sucursal: row.sucursal,
@@ -629,7 +644,7 @@ router.get('/dashboard/productos-rotacion', async (req, res, next) => {
 
     for (const row of rows) {
       const sucursal = getSucursalFromRow(row);
-      if (branches.length && !branches.includes(sucursal)) continue;
+      if (!isBranchMatch(sucursal, branches)) continue;
       
       const producto = readField(row, 'descripcion_art_serv') || 
                        readField(row, 'producto') || 
@@ -664,7 +679,7 @@ router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
 
     for (const row of rows) {
       const sucursal = getSucursalFromRow(row);
-      if (branches.length && !branches.includes(sucursal)) continue;
+      if (!isBranchMatch(sucursal, branches)) continue;
       
       const producto = readField(row, 'descripcion_art_serv') || 
                        readField(row, 'producto') || 
@@ -712,7 +727,7 @@ router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
         dias: toNumber(row.dias_transc),
         documento: toString(row.n_doc),
       }))
-      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
+      .filter(row => (branches.length ? isBranchMatch(row.sucursal, branches) : true))
       .sort((a, b) => b.saldo - a.saldo)
       .slice(0, 20);
 
@@ -738,7 +753,7 @@ router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
         dias: toNumber(row.dias_transc),
         documento: toString(row.n_doc),
       }))
-      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
+      .filter(row => (branches.length ? isBranchMatch(row.sucursal, branches) : true))
       .sort((a, b) => b.saldo - a.saldo)
       .slice(0, 20);
 
@@ -981,7 +996,7 @@ router.get('/dashboard/clientes-morosos', async (req, res, next) => {
         dias: toNumber(row.dias_transc),
         sucursal: toString(row.sucursal),
       }))
-      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
+      .filter(row => (branches.length ? isBranchMatch(row.sucursal, branches) : true))
       .filter(row => row.dias >= 30 && row.saldo > 0)
       .sort((a, b) => b.saldo - a.saldo)
       .slice(0, 20);
@@ -1094,7 +1109,7 @@ router.get('/dashboard/registro-eventos', async (req, res, next) => {
         total: toNumber(row.total),
         medio_pago: toString(row.descripcion_medio_de_pago),
       }))
-      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
+      .filter(row => isBranchMatch(row.sucursal, branches))
       .slice(0, 50);
 
     res.json({ success: true, data });
@@ -1115,7 +1130,7 @@ router.get('/dashboard/consumo-materias-primas', async (req, res, next) => {
 
     for (const row of rows) {
       const sucursal = toString(row.descripcion_sucursal) || 'N/A';
-      if (branches.length && !branches.includes(sucursal)) continue;
+      if (!isBranchMatch(sucursal, branches)) continue;
       const producto = toString(row.descripcion_art_serv);
       const cantidad = toNumber(row.cantidad);
       totals.set(producto, (totals.get(producto) ?? 0) + cantidad);
@@ -1147,7 +1162,7 @@ router.get('/dashboard/productos-quiebre-stock', async (req, res, next) => {
         stock: toNumber(row.stock_actual),
         stock_min: toNumber(row.stock_min),
       }))
-      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
+      .filter(row => isBranchMatch(row.sucursal, branches))
       .filter(row => row.stock <= row.stock_min)
       .sort((a, b) => a.stock - b.stock)
       .slice(0, 20);
@@ -1173,7 +1188,7 @@ router.get('/dashboard/tiempo-reposicion', async (req, res, next) => {
         stock_reposicion: toNumber(row.stock_reposicion),
         cajas_reposicion: toNumber(row.cajas_reposicion),
       }))
-      .filter(row => (branches.length ? branches.includes(row.sucursal) : true))
+      .filter(row => isBranchMatch(row.sucursal, branches))
       .sort((a, b) => b.stock_reposicion - a.stock_reposicion)
       .slice(0, 20);
 
@@ -1467,47 +1482,15 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
     }
 
 
-    // Coincidencia flexible de sucursal
-    let sucursalesDisponibles = Array.from(new Set(rows.map(row => {
-      return (
-        toString(row.sucursal) ||
-        toString(row.descripcion_sucursal) ||
-        toString(row.nombre_sucursal) ||
-        'N/A'
-      ).toLowerCase().trim();
-    })));
-
-    let branchesLower = branches.map(b => b.toLowerCase().trim());
-
-    // Si el filtro no coincide exactamente, buscar por substring
-    if (branchesLower.length && sucursalesDisponibles.length) {
-      const coincidencias = sucursalesDisponibles.filter(suc =>
-        branchesLower.some(filtro => suc.includes(filtro) || filtro.includes(suc))
-      );
-      if (coincidencias.length > 0) {
-        branchesLower = coincidencias;
-      } else if (coincidencias.length === 0) {
-        // Si no hay coincidencias, mostrar todo (no filtrar)
-        branchesLower = [];
-      }
-    }
+    const branchesLower = branches.map(b => b.toLowerCase().trim());
 
     const data = rows
       .map(row => {
-        const sucursalRaw =
-          toString(row.sucursal) ||
-          toString(row.descripcion_sucursal) ||
-          toString(row.nombre_sucursal) ||
-          'N/A';
-        const sucursalKey = normalizeBranch(sucursalRaw);
-        const sucursalResolved = sucursalNameById.get(sucursalKey) ?? sucursalRaw;
-        const sucursal = normalizeBranch(sucursalResolved);
-        // Filtro por sucursal explícito (query param)
-        const sucursalLower = sucursal.toLowerCase().trim();
-        if (branchesLower.length && !branchesLower.includes(sucursalLower)) {
-          console.log(`[ventas-tiempo-real] Filtro Suc: '${sucursalLower}' no está en [${branchesLower.join(', ')}]`);
+        const sucursalRaw = getSucursalFromRow(row);
+        if (!isBranchMatch(sucursalRaw, branchesLower)) {
           return null;
         }
+        const sucursal = normalizeBranch(sucursalRaw);
 
         const rawFecha =
           row.fecha_hora ??
@@ -1524,11 +1507,9 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
               : null;
 
         if (!fecha || Number.isNaN(fecha.getTime())) {
-          console.log('[ventas-tiempo-real] Filtro: Fecha inválida');
           return null;
         }
         if (fecha.getTime() > now.getTime()) {
-          console.log('[ventas-tiempo-real] Filtro: Fecha futura', fecha.toISOString(), 'vs now', now.toISOString());
           return null;
         }
 
@@ -1563,6 +1544,25 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     const finalData = Array.from(aggregatedDataMap.values())
       .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
+
+    // Inyectar el punto de "Ahora" para que el usuario vea la hora exacta de la actualización
+    if (finalData.length > 0) {
+      const last = finalData[finalData.length - 1];
+      const lastTime = new Date(last.fechaHora).getTime();
+      const nowTime = now.getTime();
+      
+      // Si el último dato es la misma hora (truncada), lo movemos a "ahora"
+      // Si ya pasó más de una hora, añadimos uno nuevo.
+      if (nowTime - lastTime < 3600000) {
+        last.fechaHora = now.toISOString();
+      } else {
+        finalData.push({
+          fechaHora: now.toISOString(),
+          montoHora: 0,
+          totalAcumulado: last.totalAcumulado
+        });
+      }
+    }
 
     console.log('[ventas-tiempo-real] data final enviada:', finalData.length, 'filas');
     if (data.length > 0) {
@@ -1604,8 +1604,8 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       });
 
       ventasMesRows.forEach((row, index) => {
-        const sucursal = normalizeBranch(getSucursalFromRow(row) || 'N/A');
-        if (branches.length && !branches.includes(sucursal)) return;
+        const sucursalRaw = getSucursalFromRow(row);
+        if (!isBranchMatch(sucursalRaw, branches)) return;
 
         const fechaVenta = getVentaFecha(row);
         if (!fechaVenta || Number.isNaN(fechaVenta.getTime()) || fechaVenta.getTime() > now.getTime()) return;
