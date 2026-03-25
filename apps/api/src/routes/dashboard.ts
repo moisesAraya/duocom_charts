@@ -620,10 +620,16 @@ router.get('/dashboard/productos-rotacion', async (req, res, next) => {
     const totals = new Map<string, number>();
 
     for (const row of rows) {
-      const sucursal = toString(row.descripcion_sucursal) || 'N/A';
+      const sucursal = getSucursalFromRow(row);
       if (branches.length && !branches.includes(sucursal)) continue;
-      const producto = toString(row.descripcion_art_serv);
-      const cantidad = toNumber(row.cantidad);
+      
+      const producto = readField(row, 'descripcion_art_serv') || 
+                       readField(row, 'producto') || 
+                       readField(row, 'descripcion') ||
+                       readField(row, 'nombre') ||
+                       'Sin nombre';
+                       
+      const cantidad = toNumber(readField(row, 'cantidad') || readField(row, 'rotacion') || readField(row, 'total'));
       totals.set(producto, (totals.get(producto) ?? 0) + cantidad);
     }
 
@@ -649,10 +655,16 @@ router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
     const totals = new Map<string, number>();
 
     for (const row of rows) {
-      const sucursal = toString(row.descripcion_sucursal) || 'N/A';
+      const sucursal = getSucursalFromRow(row);
       if (branches.length && !branches.includes(sucursal)) continue;
-      const producto = toString(row.descripcion_art_serv);
-      const contrib = toNumber(row.contrib);
+      
+      const producto = readField(row, 'descripcion_art_serv') || 
+                       readField(row, 'producto') || 
+                       readField(row, 'descripcion') ||
+                       readField(row, 'nombre') ||
+                       'Sin nombre';
+                       
+      const contrib = toNumber(readField(row, 'contrib') || readField(row, 'rentabilidad') || readField(row, 'total'));
       totals.set(producto, (totals.get(producto) ?? 0) + contrib);
     }
 
@@ -1298,13 +1310,27 @@ router.get('/dashboard/graf-vta-mes-suc', async (req, res, next) => {
     }
 
     console.log(`[dashboard] graf-vta-mes-suc: ${rows.length} filas obtenidas`);
-    if (rows.length > 0) {
-      console.log('[dashboard] graf-vta-mes-suc fila de ejemplo:', JSON.stringify(rows[0], null, 2));
-    }
+    
+    // Filtrar días futuros si es el mes/año actual
+    const hoy = new Date();
+    const diaActual = hoy.getDate();
+    const mesActual = hoy.getMonth() + 1;
+    const anoActual = hoy.getFullYear();
+
+    const filteredRows = rows.filter((row: any) => {
+      const diaStr = row["Día"] || row["Dia"] || row["DIA"] || row["dia"] || 0;
+      const dia = Number(diaStr);
+      if (
+        (ano > anoActual) ||
+        (ano === anoActual && mes > mesActual) ||
+        (ano === anoActual && mes === mesActual && dia > diaActual)
+      ) return false;
+      return true;
+    });
 
     res.json({
       success: true,
-      data: rows,
+      data: filteredRows,
     });
   } catch (error) {
     console.error('[dashboard] error in graf-vta-mes-suc:', error);

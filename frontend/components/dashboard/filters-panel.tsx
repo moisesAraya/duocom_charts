@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useDashboardFilters } from './filters-context';
 
 const SERIES_COLORS = [
@@ -31,7 +32,14 @@ export const FiltersPanel = () => {
     toggleSucursal,
     clearSucursales,
     selectAllSucursales,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate,
   } = useDashboardFilters();
+
+  const [showStart, setShowStart] = React.useState(false);
+  const [showEnd, setShowEnd] = React.useState(false);
 
   const allSelected = selectedSucursales.length === sucursales.length;
   const noneSelected = selectedSucursales.length === 0;
@@ -40,15 +48,59 @@ export const FiltersPanel = () => {
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <View>
-          <Text style={styles.title}>Sucursales</Text>
-          <Text style={styles.subtitle}>
-            {noneSelected
-              ? 'Ninguna seleccionada'
-              : allSelected
-              ? 'Todas las sucursales'
-              : `${selectedSucursales.length} de ${sucursales.length} seleccionadas`}
-          </Text>
+          <Text style={styles.title}>Filtros Globales</Text>
+          <Text style={styles.subtitle}>Sucursales y Rango de Fecha</Text>
         </View>
+      </View>
+
+      {/* Rango de Fechas */}
+      <View style={styles.dateRow}>
+        <View style={styles.dateBlock}>
+          <Text style={styles.dateLabel}>Desde:</Text>
+          <Pressable style={styles.dateButton} onPress={() => setShowStart(true)}>
+            <Text style={styles.dateButtonText}>{startDate.toLocaleDateString()}</Text>
+          </Pressable>
+          {showStart && (
+            <DateTimePicker
+              value={startDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(event, date) => {
+                setShowStart(false);
+                if (date) setStartDate(date);
+              }}
+            />
+          )}
+        </View>
+
+        <View style={styles.dateBlock}>
+          <Text style={styles.dateLabel}>Hasta:</Text>
+          <Pressable style={styles.dateButton} onPress={() => setShowEnd(true)}>
+            <Text style={styles.dateButtonText}>{endDate.toLocaleDateString()}</Text>
+          </Pressable>
+          {showEnd && (
+            <DateTimePicker
+              value={endDate}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(event, date) => {
+                setShowEnd(false);
+                if (date) setEndDate(date);
+              }}
+            />
+          )}
+        </View>
+      </View>
+
+      <View style={{ marginTop: 16 }}>
+        <Text style={[styles.title, { fontSize: 16 }]}>Sucursales</Text>
+        <Text style={styles.subtitle}>
+          {noneSelected
+            ? 'Ninguna seleccionada'
+            : allSelected
+            ? 'Todas las sucursales'
+            : `${selectedSucursales.length} de ${sucursales.length} seleccionadas`}
+        </Text>
       </View>
 
       <View style={styles.actionRow}>
@@ -183,5 +235,31 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: '#F9FAFB',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    gap: 12,
+  },
+  dateBlock: {
+    flex: 1,
+  },
+  dateLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 4,
+  },
+  dateButton: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    padding: 10,
+    alignItems: 'center',
+  },
+  dateButtonText: {
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '500',
   },
 });

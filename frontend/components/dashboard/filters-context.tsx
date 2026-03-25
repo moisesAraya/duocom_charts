@@ -24,6 +24,10 @@ interface FiltersContextValue {
   clearSucursales: () => void;
   selectAllSucursales: () => void;
   requestParams: Record<string, string>;
+  startDate: Date;
+  setStartDate: (d: Date) => void;
+  endDate: Date;
+  setEndDate: (d: Date) => void;
 }
 
 const FiltersContext = createContext<FiltersContextValue | undefined>(undefined);
@@ -32,6 +36,14 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
   const [sucursales, setSucursales] = useState<BranchOption[]>([]);
   const [selectedSucursales, setSelectedSucursales] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Filtros de fecha globales (default: último mes)
+  const [endDate, setEndDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d;
+  });
 
   const fetchSucursales = useCallback(async () => {
     try {
@@ -78,7 +90,9 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
 
   const requestParams = useMemo(() => ({
     sucursal: selectedSucursales.join(','),
-  }), [selectedSucursales]);
+    start: startDate.toISOString().split('T')[0],
+    end: endDate.toISOString().split('T')[0],
+  }), [selectedSucursales, startDate, endDate]);
 
   const value = useMemo(
     () => ({
@@ -88,6 +102,10 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
       clearSucursales,
       selectAllSucursales,
       requestParams,
+      startDate,
+      setStartDate,
+      endDate,
+      setEndDate,
     }),
     [
       sucursales,
@@ -96,6 +114,8 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
       clearSucursales,
       selectAllSucursales,
       requestParams,
+      startDate,
+      endDate,
     ]
   );
 

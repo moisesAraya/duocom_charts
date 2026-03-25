@@ -1032,6 +1032,8 @@ export default function VentasScreen() {
         colorRgb="245,158,11"
         width={chartWidth}
         height={280}
+        scrollable
+        minWidth={chartWidth + 160} // ✅ Más ancho para que la leyenda no se corte
         formatDetailValue={formatCurrency}
         isLoading={loadingVentasGrupo}
         isEmpty={!ventasGrupo.length}
@@ -1564,12 +1566,16 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   const openFullScreen = useCallback(async () => {
     setZoom(1);
     try {
+      // ✅ Bloqueamos orientación primero
       await ScreenOrientation.lockAsync(
         ScreenOrientation.OrientationLock.LANDSCAPE,
       );
-    } catch {
-      // no-op
-    } finally {
+      // ✅ Pequeña pausa técnica (150ms) antes de mostrar el Modal
+      setTimeout(() => {
+        setFsVisible(true);
+      }, 150);
+    } catch (e) {
+      console.error("Error locking orientation:", e);
       setFsVisible(true);
     }
   }, []);
@@ -1782,7 +1788,9 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
                   fromZero
                   // ✅ Valores en cada punto (solo fullscreen), con 2 decimales en M
                   renderDotContent={({ x, y, index, indexData }) => {
-                    // Si hay MUCHAS series, puede saturar. Si quieres, lo limito a zoom>=1.5
+                    // Solo mostrar valores si el zoom es alto (> 1.2) para evitar saturación y crashes
+                    if (zoom < 1.2) return null;
+                    
                     const v = Number(indexData);
                     if (!Number.isFinite(v) || v === 0) return null;
 

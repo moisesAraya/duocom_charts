@@ -210,8 +210,6 @@ export const ChartCard = ({
   } | null>(null);
 
   const filtersContext = useDashboardFilters();
-  const filters = filtersContext;
-  const setFilters = filtersContext.setFilters ?? (() => {});
   const [showPicker, setShowPicker] = useState(false);
 
   useEffect(() => {
@@ -419,8 +417,8 @@ export const ChartCard = ({
     return undefined;
   }, [formatAxisValue]);
 
-  // ✅ Fix CLIPPING labels eje X cuando line + scrollable
-  const extraBottomForXLabels = scrollable && kind === "line" ? 22 : 0;
+  // ✅ Fix CLIPPING labels eje X cuando line + scrollable (a aumentado a 35)
+  const extraBottomForXLabels = scrollable && kind === "line" ? 35 : 0;
   const effectiveHeight = height + extraBottomForXLabels;
 
   return (
@@ -443,7 +441,7 @@ export const ChartCard = ({
               }}
               onPress={() => setShowPicker(true)}
             >
-              <Text>{filters.sucursal || "Todas"}</Text>
+              <Text>{filtersContext.selectedSucursales.length === 0 ? "Todas" : filtersContext.selectedSucursales.join(", ")}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -551,7 +549,7 @@ export const ChartCard = ({
                       height={height}
                       accessor="population"
                       backgroundColor="transparent"
-                      paddingLeft="15"
+                      paddingLeft="35"
                       chartConfig={chartConfig}
                       style={styles.chart}
                     />
@@ -634,7 +632,7 @@ export const ChartCard = ({
                     height={height}
                     accessor="population"
                     backgroundColor="transparent"
-                    paddingLeft="15"
+                    paddingLeft="35"
                     chartConfig={chartConfig}
                     style={styles.chart}
                   />
@@ -685,7 +683,7 @@ export const ChartCard = ({
               <Pressable
                 style={styles.modalValueRow}
                 onPress={() => {
-                  setFilters({ ...filters, sucursal: "" });
+                  filtersContext.clearSucursales();
                   setShowPicker(false);
                 }}
               >
@@ -696,7 +694,7 @@ export const ChartCard = ({
                   key={suc}
                   style={styles.modalValueRow}
                   onPress={() => {
-                    setFilters({ ...filters, sucursal: suc });
+                    filtersContext.toggleSucursal(suc);
                     setShowPicker(false);
                   }}
                 >
