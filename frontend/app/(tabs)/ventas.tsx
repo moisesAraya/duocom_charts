@@ -374,10 +374,6 @@ export default function VentasScreen() {
   }, [loadVentasAnuales]);
   useEffect(() => {
     void loadVentasTiempoReal();
-    const id = setInterval(() => {
-      void loadVentasTiempoReal();
-    }, 30_000);
-    return () => clearInterval(id);
   }, [loadVentasTiempoReal]);
 
   const loadAllData = useCallback(async () => {
@@ -928,64 +924,8 @@ export default function VentasScreen() {
         />
       </ScrollView>
 
-      <ChartCard
-        title="Ventas por medio de pago"
-        headerContent={
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={ui.label}>Año</Text>
-              <Pressable
-                style={ui.picker}
-                onPress={() => setShowYearPickerMP(true)}
-              >
-                <Text style={ui.pickerText}>{anoMP}</Text>
-              </Pressable>
-            </View>
 
-            <View style={{ flex: 1 }}>
-              <Text style={ui.label}>Mes</Text>
-              <Pressable
-                style={ui.picker}
-                onPress={() => setShowMonthPickerMP(true)}
-              >
-                <Text style={ui.pickerText}>
-                  {
-                    [
-                      "Ene",
-                      "Feb",
-                      "Mar",
-                      "Abr",
-                      "May",
-                      "Jun",
-                      "Jul",
-                      "Ago",
-                      "Sep",
-                      "Oct",
-                      "Nov",
-                      "Dic",
-                    ][mesMP - 1]
-                  }
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        }
-        data={ventasMedioPagoData}
-        kind="bar"
-        colorRgb="59,130,246"
-        width={chartWidth}
-        height={300}
-        xLabel="Medios de pago"
-        yLabel="Ventas ($)"
-        formatValue={formatCompact}
-        formatDetailValue={formatCurrency}
-        formatAxisValue={formatCompact}
-        scrollable
-        minWidth={Math.max(chartWidth, ventasMedioPagoLabels.length * 56)}
-        isLoading={loadingVentasMedioPago}
-        isEmpty={!ventasMedioPago.length}
-        detailLabels={ventasMedioPagoLabels}
-      />
+      {/* Eliminados: Ventas por medio de pago y Ventas por grupo */}
 
       <Modal visible={showYearPickerMP} transparent animationType="fade">
         <Pressable

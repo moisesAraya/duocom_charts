@@ -253,7 +253,7 @@ const getRotacionRows = async (
   limit: number
 ): Promise<NormalizedRow[]> => {
   try {
-    return await runProcedure(dbConfig, '_PvtRotacion', [start], { limit });
+    return await runProcedure(dbConfig, '_PvtRotación', [start], { limit });
   } catch (error) {
     if (isMissingProcedureError(error)) return [];
     throw error;
