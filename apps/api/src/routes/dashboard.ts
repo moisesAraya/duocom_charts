@@ -1440,18 +1440,23 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         { limit },
       );
     } catch (error) {
+      console.error('[ventas-tiempo-real] ERROR AL EJECUTAR SP:', error);
       const message = error instanceof Error ? error.message.toLowerCase() : '';
       if (message.includes('procedure unknown') || message.includes('procedure not found')) {
         warning = 'No existe SP_VENTAS_TIEMPO_REAL en esta base de datos';
       } else {
-        throw error;
+        // Enviar error detallado para ver en logs
+        return res.status(500).json({ success: false, error: String(error), sql: 'SP_VENTAS_TIEMPO_REAL' });
       }
     }
 
 
     // LOG DETALLADO PARA DEBUG
     console.log('[ventas-tiempo-real] branches filtro:', branches);
-    console.log('[ventas-tiempo-real] primeras filas crudas:', rows.slice(0, 5));
+    console.log('[ventas-tiempo-real] Total filas crudas del SP:', rows.length);
+    if (rows.length > 0) {
+      console.log('[ventas-tiempo-real] Primera fila cruda:', rows[0]);
+    }
 
 
     // Coincidencia flexible de sucursal
@@ -1471,8 +1476,8 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       const coincidencias = sucursalesDisponibles.filter(suc =>
         branchesLower.some(filtro => suc.includes(filtro) || filtro.includes(suc))
       );
-      if (coincidencias.length === 1) {
-        branchesLower = [coincidencias[0]];
+      if (coincidencias.length > 0) {
+        branchesLower = coincidencias;
       } else if (coincidencias.length === 0) {
         // Si no hay coincidencias, mostrar todo (no filtrar)
         branchesLower = [];
@@ -1490,7 +1495,11 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         const sucursalResolved = sucursalNameById.get(sucursalKey) ?? sucursalRaw;
         const sucursal = normalizeBranch(sucursalResolved);
         // Filtro por sucursal explícito (query param)
-        if (branchesLower.length && !branchesLower.includes(sucursal.toLowerCase().trim())) return null;
+        const sucursalLower = sucursal.toLowerCase().trim();
+        if (branchesLower.length && !branchesLower.includes(sucursalLower)) {
+          console.log(`[ventas-tiempo-real] Filtro Suc: '${sucursalLower}' no está en [${branchesLower.join(', ')}]`);
+          return null;
+        }
 
         const rawFecha =
           row.fecha_hora ??
@@ -1506,15 +1515,17 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
               ? new Date(String(rawFecha))
               : null;
 
-        if (!fecha || Number.isNaN(fecha.getTime()) || fecha.getTime() > now.getTime()) return null;
+        if (!fecha || Number.isNaN(fecha.getTime())) {
+          console.log('[ventas-tiempo-real] Filtro: Fecha inválida');
+          return null;
+        }
+        if (fecha.getTime() > now.getTime()) {
+          console.log('[ventas-tiempo-real] Filtro: Fecha futura', fecha.toISOString(), 'vs now', now.toISOString());
+          return null;
+        }
 
         const totalAcumulado =
-          toNumber(row.total_acumulado) ||
-          toNumber(row.totalacumulado) ||
-          toNumber(row.acumulado) ||
-          toNumber(row.total) ||
-          toNumber(row.monto) ||
-          0;
+          toNumber(row.total_acumulado ?? row.totalacumulado ?? row.acumulado ?? row.total ?? row.monto ?? 0);
 
         return {
           fechaHora: fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : '',
@@ -1526,7 +1537,10 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       .filter((item): item is { fechaHora: string; totalAcumulado: number; sucursalDebug: string; sucursal: string } => Boolean(item?.fechaHora))
       .sort((a, b) => a.fechaHora.localeCompare(b.fechaHora));
 
-    console.log('[ventas-tiempo-real] data final enviada:', data.slice(0, 5));
+    console.log('[ventas-tiempo-real] data final enviada:', data.length, 'filas');
+    if (data.length > 0) {
+      console.log('[ventas-tiempo-real] Primera fila mapeada:', data[0]);
+    }
 
     const getVentaFecha = (row: NormalizedRow): Date | null =>
       parseUnknownDate(row.fecha_hora) ??
