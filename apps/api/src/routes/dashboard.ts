@@ -1677,4 +1677,19 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
   }
 });
 
+// Resumen por tipo de documento para el F29 (Impuestos)
+router.get('/dashboard/impuestos-f29', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const { end } = getDateRange(req.query as Record<string, unknown>);
+    const ano = parseNumber(toString(req.query.ano), end.getFullYear());
+    const mes = parseNumber(toString(req.query.mes), end.getMonth() + 1);
+
+    const rows = await runProcedure(dbConfig, '_F29b', [ano, mes]);
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
