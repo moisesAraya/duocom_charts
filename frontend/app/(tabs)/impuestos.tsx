@@ -22,21 +22,19 @@ import {
 } from 'react-native';
 
 type ImpuestoRow = {
-  // Posibles campos normalizados por db-helpers.ts
+  // Campos confirmados por el log del usuario
+  ttx?: number;
+  id_t_doc?: string;
   descripcion_t_documento?: string;
-  codigo_sii?: string;
-  folio_inicial?: number;
-  folio_final?: number;
-  cant_folios?: number;
+  codigo_s_i_i?: string;
+  folioinicial?: number;
+  foliofinal?: number;
+  cantfolios?: number;
   afecto?: number;
-  iva?: number;
   i_v_a?: number;
   exento?: number;
   otros_imp?: number;
   total?: number;
-  ttx?: number; // Tipo de impuesto (suele ser 1 para ventas, 2 para compras o similar)
-  tipo?: string; 
-  libro?: string; 
   
   [key: string]: any;
 };
@@ -165,39 +163,31 @@ export default function ImpuestosScreen() {
   }, [params]);
 
   // Filtrado según el modo seleccionado
-  // Basado en el campo ttx (común en esta BD: suele ser 1 ventas, 2 compras)
   const filteredData = useMemo(() => {
     if (!rawRows.length) return [];
     
-    // Primero ordenamos como pidió el jefe: TTx y Código SII
+    // Primero ordenamos: TTx y Código SII
     const sorted = [...rawRows].sort((a, b) => {
-      const ttxA = a.ttx ?? a.TTX ?? 0;
-      const ttxB = b.ttx ?? b.TTX ?? 0;
+      const ttxA = a.ttx ?? 0;
+      const ttxB = b.ttx ?? 0;
       if (ttxA !== ttxB) return ttxA - ttxB;
       
-      const codA = (a.codigo_sii ?? a.CODIGO_SII ?? '').toString();
-      const codB = (b.codigo_sii ?? b.CODIGO_SII ?? '').toString();
+      const codA = (a.codigo_s_i_i ?? '').toString();
+      const codB = (b.codigo_s_i_i ?? '').toString();
       return codA.localeCompare(codB);
     });
 
     return sorted.filter(row => {
-      const ttx = row.ttx ?? row.TTX;
+      const ttx = row.ttx;
       
-      // Si tenemos ttx, lo usamos (1 ventas, 2 compras es el estándar)
+      // Si tenemos ttx, lo usamos
+      // Asumimos 1=Ventas, 2=Compras por el orden del SP (o al revés, pero probemos con 1=Ventas)
+      // Si no funciona, el debug mostrará los valores de ttx.
       if (ttx !== undefined && ttx !== null) {
         if (viewMode === 'ventas') return ttx === 1;
         return ttx === 2;
       }
-      
-      // Fallback a otros identificadores si ttx no existe
-      const typeVal = (row.tipo || row.libro || row.v_c || row.TIPO || row.LIBRO || '').toString().toUpperCase();
-      if (!typeVal) return true;
-      
-      if (viewMode === 'ventas') {
-        return typeVal.startsWith('V') || typeVal.includes('VENTA') || typeVal.includes('DEBITO');
-      } else {
-        return typeVal.startsWith('C') || typeVal.includes('COMPRA') || typeVal.includes('CREDITO');
-      }
+      return true;
     });
   }, [rawRows, viewMode]);
 
@@ -208,70 +198,70 @@ export default function ImpuestosScreen() {
       key: 'desc', 
       title: 'Descripción T/Documento', 
       width: 180, 
-      render: (r) => r.descripcion_t_documento ?? r.DESCRIPCION ?? r.desc ?? '' 
+      render: (r) => r.descripcion_t_documento ?? '' 
     },
     { 
       key: 'sii', 
       title: 'Código S.I.I', 
       width: 90, 
       align: 'center', 
-      render: (r) => (r.codigo_sii ?? r.CODIGO_SII ?? r.cod_sii ?? '').toString()
+      render: (r) => (r.codigo_s_i_i ?? '').toString()
     },
     { 
       key: 'ini', 
       title: 'Folio Inicial', 
       width: 100, 
       align: 'right', 
-      render: (r) => (r.folio_inicial ?? r.FOLIO_INICIAL ?? 0).toString() 
+      render: (r) => (r.folioinicial ?? 0).toString() 
     },
     { 
       key: 'fin', 
       title: 'Folio Final', 
       width: 100, 
       align: 'right', 
-      render: (r) => (r.folio_final ?? r.FOLIO_FINAL ?? 0).toString() 
+      render: (r) => (r.foliofinal ?? 0).toString() 
     },
     { 
       key: 'cant', 
       title: 'Cant Folios', 
       width: 90, 
       align: 'right', 
-      render: (r) => (r.cant_folios ?? r.CANT_FOLIOS ?? r.cantidad ?? 0).toString() 
+      render: (r) => (r.cantfolios ?? 0).toString() 
     },
     { 
       key: 'afecto', 
       title: 'Afecto', 
       width: 110, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.afecto ?? r.AFECTO ?? r.neto)) 
+      render: (r) => formatCurrency(toNumber(r.afecto)) 
     },
     { 
       key: 'iva', 
       title: 'I.v.a', 
       width: 110, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.i_v_a ?? r.iva ?? r.IVA)) 
+      render: (r) => formatCurrency(toNumber(r.i_v_a)) 
     },
     { 
       key: 'exento', 
       title: 'Exento', 
       width: 110, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.exento ?? r.EXENTO)) 
+      render: (r) => formatCurrency(toNumber(r.exento)) 
     },
     { 
       key: 'otros', 
       title: 'Otros Imp.', 
       width: 110, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.otros_imp ?? r.OTROS_IMP ?? r.otros)) 
+      render: (r) => formatCurrency(toNumber(r.otros_imp)) 
     },
     { 
       key: 'total', 
       title: 'Total', 
       width: 120, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.total ?? r.TOTAL)) 
+      render: (r) => formatCurrency(toNumber(r.total)) 
     },
   ];
 
@@ -324,14 +314,12 @@ export default function ImpuestosScreen() {
           initialLimit={15}
         />
 
-        {/* Debug View */}
+        {/* Panel de Depuración (siempre visible si hay datos pero no se muestran) */}
         {!loading && rawRows.length > 0 && filteredData.length === 0 && (
           <View style={ui.debugCard}>
-            <Text style={ui.debugTitle}>Información de depuración:</Text>
-            <Text style={ui.debugText}>Total filas recibidas: {rawRows.length}</Text>
-            <Text style={ui.debugText}>Campos en la primera fila:</Text>
-            <Text style={ui.debugKeys}>{Object.keys(rawRows[0]).join(', ')}</Text>
-            <Text style={ui.debugText}>Valores TTx: {Array.from(new Set(rawRows.map(r => r.ttx ?? r.TTX))).join(', ')}</Text>
+            <Text style={ui.debugTitle}>Ayuda técnica:</Text>
+            <Text style={ui.debugText}>Se recibieron {rawRows.length} filas pero ninguna coincide con el filtro ttx={viewMode === 'ventas' ? 1 : 2}.</Text>
+            <Text style={ui.debugText}>Valores ttx disponibles: {Array.from(new Set(rawRows.map(r => r.ttx))).join(', ')}</Text>
           </View>
         )}
 
