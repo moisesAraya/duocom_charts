@@ -1,7 +1,7 @@
 /**
  * impuestos.tsx — Pestaña de Impuestos del dashboard.
  *
- * Muestra el resumen por tipo de documento (F29) obtenido del SP _F29b.
+ * Muestra el resumen por tipo de documento (F29) obtenido del SP _F29a.
  */
 
 import { api } from '@/constants/api';
@@ -9,9 +9,6 @@ import { FilterRow } from '@/components/dashboard/chart-filters';
 import { ScreenShell } from '@/components/dashboard/screen-shell';
 import {
   formatCurrency,
-  formatDateInput,
-  startOfMonth,
-  endOfMonth,
 } from '@/components/dashboard/utils';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -25,6 +22,7 @@ import {
 } from 'react-native';
 
 type ImpuestoRow = {
+  // Posibles campos normalizados por db-helpers.ts
   descripcion_t_documento?: string;
   codigo_sii?: string;
   folio_inicial?: number;
@@ -32,20 +30,15 @@ type ImpuestoRow = {
   cant_folios?: number;
   afecto?: number;
   iva?: number;
+  i_v_a?: number;
   exento?: number;
   otros_imp?: number;
   total?: number;
-  // Fallbacks para nombres en mayúsculas (común en Firebird)
-  DESCRIPCION?: string;
-  CODIGO_SII?: string;
-  FOLIO_INICIAL?: number;
-  FOLIO_FINAL?: number;
-  CANT_FOLIOS?: number;
-  AFECTO?: number;
-  IVA?: number;
-  EXENTO?: number;
-  OTROS_IMP?: number;
-  TOTAL?: number;
+  ttx?: number; // Tipo de impuesto (suele ser 1 para ventas, 2 para compras o similar)
+  tipo?: string; 
+  libro?: string; 
+  
+  [key: string]: any;
 };
 
 type GridColumn<T> = {
@@ -63,7 +56,7 @@ function DataGridCard<T>({
   rows,
   columns,
   emptyMessage,
-  initialLimit = 10,
+  initialLimit = 15,
 }: {
   title: string;
   subtitle?: string;
@@ -140,11 +133,14 @@ function DataGridCard<T>({
 
 export default function ImpuestosScreen() {
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<ImpuestoRow[]>([]);
+  const [rawRows, setRawRows] = useState<ImpuestoRow[]>([]);
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  
+  // Selector de Ventas / Compras
+  const [viewMode, setViewMode] = useState<'ventas' | 'compras'>('ventas');
 
   const params = useMemo(() => ({
     ano: selectedYear,
@@ -158,15 +154,52 @@ export default function ImpuestosScreen() {
         const response = await api.get('/api/dashboard/impuestos-f29', {
           params: { ...params },
         });
-        setData(response.data?.data ?? []);
+        setRawRows(response.data?.data ?? []);
       } catch {
-        setData([]);
+        setRawRows([]);
       } finally {
         setLoading(false);
       }
     };
     void loadData();
   }, [params]);
+
+  // Filtrado según el modo seleccionado
+  // Basado en el campo ttx (común en esta BD: suele ser 1 ventas, 2 compras)
+  const filteredData = useMemo(() => {
+    if (!rawRows.length) return [];
+    
+    // Primero ordenamos como pidió el jefe: TTx y Código SII
+    const sorted = [...rawRows].sort((a, b) => {
+      const ttxA = a.ttx ?? a.TTX ?? 0;
+      const ttxB = b.ttx ?? b.TTX ?? 0;
+      if (ttxA !== ttxB) return ttxA - ttxB;
+      
+      const codA = (a.codigo_sii ?? a.CODIGO_SII ?? '').toString();
+      const codB = (b.codigo_sii ?? b.CODIGO_SII ?? '').toString();
+      return codA.localeCompare(codB);
+    });
+
+    return sorted.filter(row => {
+      const ttx = row.ttx ?? row.TTX;
+      
+      // Si tenemos ttx, lo usamos (1 ventas, 2 compras es el estándar)
+      if (ttx !== undefined && ttx !== null) {
+        if (viewMode === 'ventas') return ttx === 1;
+        return ttx === 2;
+      }
+      
+      // Fallback a otros identificadores si ttx no existe
+      const typeVal = (row.tipo || row.libro || row.v_c || row.TIPO || row.LIBRO || '').toString().toUpperCase();
+      if (!typeVal) return true;
+      
+      if (viewMode === 'ventas') {
+        return typeVal.startsWith('V') || typeVal.includes('VENTA') || typeVal.includes('DEBITO');
+      } else {
+        return typeVal.startsWith('C') || typeVal.includes('COMPRA') || typeVal.includes('CREDITO');
+      }
+    });
+  }, [rawRows, viewMode]);
 
   const toNumber = (val: any) => (typeof val === 'number' ? val : 0);
 
@@ -175,14 +208,14 @@ export default function ImpuestosScreen() {
       key: 'desc', 
       title: 'Descripción T/Documento', 
       width: 180, 
-      render: (r) => r.descripcion_t_documento ?? r.DESCRIPCION ?? '' 
+      render: (r) => r.descripcion_t_documento ?? r.DESCRIPCION ?? r.desc ?? '' 
     },
     { 
       key: 'sii', 
       title: 'Código S.I.I', 
       width: 90, 
       align: 'center', 
-      render: (r) => r.codigo_sii ?? r.CODIGO_SII ?? '' 
+      render: (r) => (r.codigo_sii ?? r.CODIGO_SII ?? r.cod_sii ?? '').toString()
     },
     { 
       key: 'ini', 
@@ -203,21 +236,21 @@ export default function ImpuestosScreen() {
       title: 'Cant Folios', 
       width: 90, 
       align: 'right', 
-      render: (r) => (r.cant_folios ?? r.CANT_FOLIOS ?? 0).toString() 
+      render: (r) => (r.cant_folios ?? r.CANT_FOLIOS ?? r.cantidad ?? 0).toString() 
     },
     { 
       key: 'afecto', 
       title: 'Afecto', 
       width: 110, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.afecto ?? r.AFECTO)) 
+      render: (r) => formatCurrency(toNumber(r.afecto ?? r.AFECTO ?? r.neto)) 
     },
     { 
       key: 'iva', 
       title: 'I.v.a', 
       width: 110, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.iva ?? r.IVA)) 
+      render: (r) => formatCurrency(toNumber(r.i_v_a ?? r.iva ?? r.IVA)) 
     },
     { 
       key: 'exento', 
@@ -231,7 +264,7 @@ export default function ImpuestosScreen() {
       title: 'Otros Imp.', 
       width: 110, 
       align: 'right', 
-      render: (r) => formatCurrency(toNumber(r.otros_imp ?? r.OTROS_IMP)) 
+      render: (r) => formatCurrency(toNumber(r.otros_imp ?? r.OTROS_IMP ?? r.otros)) 
     },
     { 
       key: 'total', 
@@ -243,8 +276,9 @@ export default function ImpuestosScreen() {
   ];
 
   return (
-    <ScreenShell title="Impuestos" subtitle="Registro de compras y ventas (F29)">
+    <ScreenShell title="Impuestos" subtitle="Resumen IVA (F29)">
       <>
+        {/* Filtro de Periodo */}
         <FilterRow title="Consultar periodo">
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 1 }}>
@@ -264,16 +298,44 @@ export default function ImpuestosScreen() {
           </View>
         </FilterRow>
 
+        {/* Selector de Compras / Ventas */}
+        <View style={ui.modeContainer}>
+          <Pressable 
+            style={[ui.modeButton, viewMode === 'ventas' && ui.modeButtonActive]} 
+            onPress={() => setViewMode('ventas')}
+          >
+            <Text style={[ui.modeButtonText, viewMode === 'ventas' && ui.modeButtonTextActive]}>Ventas</Text>
+          </Pressable>
+          <Pressable 
+            style={[ui.modeButton, viewMode === 'compras' && ui.modeButtonActive]} 
+            onPress={() => setViewMode('compras')}
+          >
+            <Text style={[ui.modeButtonText, viewMode === 'compras' && ui.modeButtonTextActive]}>Compras</Text>
+          </Pressable>
+        </View>
+
         <DataGridCard
           title="Resumen por tipo de documento"
-          subtitle={`Periodo ${selectedMonth}/${selectedYear}`}
+          subtitle={`${viewMode === 'ventas' ? 'Libro de Ventas' : 'Libro de Compras'} — ${selectedMonth}/${selectedYear}`}
           loading={loading}
-          rows={data}
+          rows={filteredData}
           columns={columns}
-          emptyMessage="Sin registros para este periodo."
+          emptyMessage={`No hay registros de ${viewMode} para este periodo.`}
           initialLimit={15}
         />
 
+        {/* Debug View */}
+        {!loading && rawRows.length > 0 && filteredData.length === 0 && (
+          <View style={ui.debugCard}>
+            <Text style={ui.debugTitle}>Información de depuración:</Text>
+            <Text style={ui.debugText}>Total filas recibidas: {rawRows.length}</Text>
+            <Text style={ui.debugText}>Campos en la primera fila:</Text>
+            <Text style={ui.debugKeys}>{Object.keys(rawRows[0]).join(', ')}</Text>
+            <Text style={ui.debugText}>Valores TTx: {Array.from(new Set(rawRows.map(r => r.ttx ?? r.TTX))).join(', ')}</Text>
+          </View>
+        )}
+
+        {/* Year Picker Modal */}
         <Modal visible={showYearPicker} transparent animationType="fade">
           <Pressable style={modal.backdrop} onPress={() => setShowYearPicker(false)}>
             <View style={modal.card}>
@@ -298,6 +360,7 @@ export default function ImpuestosScreen() {
           </Pressable>
         </Modal>
 
+        {/* Month Picker Modal */}
         <Modal visible={showMonthPicker} transparent animationType="fade">
           <Pressable style={modal.backdrop} onPress={() => setShowMonthPicker(false)}>
             <View style={modal.card}>
@@ -343,6 +406,47 @@ const ui = StyleSheet.create({
     backgroundColor: '#F0F7FF',
   },
   pickerText: { fontSize: 15, fontWeight: '600', color: '#3B82F6' },
+  modeContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+    marginHorizontal: 16,
+  },
+  modeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  modeButtonActive: {
+    backgroundColor: '#FFFFFF',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  modeButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  modeButtonTextActive: {
+    color: '#2563EB',
+  },
+  debugCard: {
+    margin: 16,
+    padding: 12,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FEF3C7',
+  },
+  debugTitle: { fontSize: 13, fontWeight: '700', color: '#92400E', marginBottom: 4 },
+  debugText: { fontSize: 12, color: '#B45309' },
+  debugKeys: { fontSize: 11, color: '#B45309', fontFamily: 'monospace', marginTop: 4 },
 });
 
 const grid = StyleSheet.create({

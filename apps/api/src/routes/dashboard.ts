@@ -1685,7 +1685,9 @@ router.get('/dashboard/impuestos-f29', async (req, res, next) => {
     const ano = parseNumber(toString(req.query.ano), end.getFullYear());
     const mes = parseNumber(toString(req.query.mes), end.getMonth() + 1);
 
-    const rows = await runProcedure(dbConfig, '_F29b', [ano, mes]);
+    const rows = await runProcedure(dbConfig, '_F29a', [ano, mes]);
+    console.log(`[impuestos-f29] ${rows.length} rows found for ${ano}-${mes} using _F29a`);
+    if (rows.length > 0) console.log('[impuestos-f29] First row keys:', Object.keys(rows[0]));
     res.json({ success: true, data: rows });
   } catch (error) {
     next(error);
