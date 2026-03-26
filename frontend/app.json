@@ -47,10 +47,10 @@
     "extra": {
       "router": {},
       "eas": {
+        "projectId": "8bcad135-4df4-4268-ab5c-78a4d81e4fb2"
       },
       "apiUrl": "https://duocom.dyndns.org/charts",
       "apiKey": ""
     }
   }
 }
-

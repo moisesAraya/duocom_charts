@@ -1449,7 +1449,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     let rows: NormalizedRow[] = [];
     try {
-      console.log('[ventas-tiempo-real][DEBUG] Llamando SP_VENTAS_TIEMPO_REAL con:', {
+      console.log('[ventas-tiempo-real][DEBUG] Llamando Web_VentasTiempoReal con:', {
         dbConfig,
         params: [startOfDay, now],
         limit,
@@ -1458,7 +1458,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       });
       rows = await runProcedure(
         dbConfig,
-        'SP_VENTAS_TIEMPO_REAL',
+        'Web_VentasTiempoReal',
         [startOfDay, now],
         { limit },
       );
@@ -1466,10 +1466,10 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       console.error('[ventas-tiempo-real] ERROR AL EJECUTAR SP:', error);
       const message = error instanceof Error ? error.message.toLowerCase() : '';
       if (message.includes('procedure unknown') || message.includes('procedure not found')) {
-        warning = 'No existe SP_VENTAS_TIEMPO_REAL en esta base de datos';
+        warning = 'No existe Web_VentasTiempoReal en esta base de datos';
       } else {
         // Enviar error detallado para ver en logs
-        return res.status(500).json({ success: false, error: String(error), sql: 'SP_VENTAS_TIEMPO_REAL' });
+        return res.status(500).json({ success: false, error: String(error), sql: 'Web_VentasTiempoReal' });
       }
     }
 
