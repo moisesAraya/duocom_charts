@@ -1449,7 +1449,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     let rows: NormalizedRow[] = [];
     try {
-      console.log('[ventas-tiempo-real][DEBUG] Llamando Web_VentasTiempoReal con:', {
+      console.log('[ventas-tiempo-real][DEBUG] Llamando WEB_VENTASTIEMPOREAL con:', {
         dbConfig,
         params: [startOfDay, now],
         limit,
