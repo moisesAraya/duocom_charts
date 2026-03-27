@@ -350,20 +350,7 @@ export default function ImpuestosScreen() {
                 </View>
               </View>
             </ScrollView>
-          ) : (
-            <Text style={grid.emptyText}>No se pudo cargar el resumen general.</Text>
           )}
-
-          <View style={ui.infoBox}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-              <Ionicons name="information-circle" size={18} color="#1D4ED8" />
-              <Text style={ui.infoTitle}>Importante:</Text>
-            </View>
-            <Text style={ui.infoText}>• Pago calculado al 23/01/26 a las 15:41:00 hrs</Text>
-            <Text style={ui.infoText}>• Incluye TODOS los DTE's de Ventas</Text>
-            <Text style={ui.infoText}>• Verifique haber registrado todos los DTE's de COMPRAS</Text>
-            <Text style={ui.infoText}>• Verifique que su tasa de PPM sea la correcta</Text>
-          </View>
         </View>
 
         {/* Filtro de Periodo */}
@@ -533,25 +520,6 @@ const ui = StyleSheet.create({
   debugTitle: { fontSize: 13, fontWeight: '700', color: '#92400E', marginBottom: 4 },
   debugText: { fontSize: 12, color: '#B45309' },
   debugKeys: { fontSize: 11, color: '#B45309', fontFamily: 'monospace', marginTop: 4 },
-  infoBox: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#3B82F6',
-  },
-  infoTitle: {
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1E40AF',
-  },
-  infoText: {
-    fontSize: 12,
-    color: '#1E40AF',
-    lineHeight: 18,
-  },
 });
 
 const grid = StyleSheet.create({
