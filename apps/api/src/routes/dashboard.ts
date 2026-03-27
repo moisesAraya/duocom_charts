@@ -1694,4 +1694,22 @@ router.get('/dashboard/impuestos-f29', async (req, res, next) => {
   }
 });
 
+// Cálculo detallado del F29 (Resumen General)
+router.get('/dashboard/f29-calcular', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const { end } = getDateRange(req.query as Record<string, unknown>);
+    const ano = parseNumber(toString(req.query.ano), end.getFullYear());
+    const mes = parseNumber(toString(req.query.mes), end.getMonth() + 1);
+
+    const rows = await runProcedure(dbConfig, 'spF29Calcular', [ano, mes]);
+    console.log(`[f29-calcular] ${rows.length} rows found for ${ano}-${mes}`);
+    
+    // El SP devuelve una sola fila con los totales
+    res.json({ success: true, data: rows[0] || {} });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

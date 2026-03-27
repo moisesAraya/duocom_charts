@@ -9,6 +9,7 @@ import { FilterRow } from '@/components/dashboard/chart-filters';
 import { ScreenShell } from '@/components/dashboard/screen-shell';
 import {
   formatCurrency,
+  formatNumberExact,
 } from '@/components/dashboard/utils';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -20,10 +21,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 type ImpuestoRow = {
   // Campos confirmados por el log del usuario
-  ttx?: number;
+  ttx?: string | number;
   id_t_doc?: string;
   descripcion_t_documento?: string;
   codigo_s_i_i?: string;
@@ -45,9 +47,10 @@ type GridColumn<T> = {
   width?: number;
   align?: 'left' | 'right' | 'center';
   render: (row: T) => string;
+  isSummable?: boolean;
 };
 
-function DataGridCard<T>({
+function DataGridCard<T extends Record<string, any>>({
   title,
   subtitle,
   loading,
@@ -67,6 +70,17 @@ function DataGridCard<T>({
   const [expanded, setExpanded] = useState(false);
   const visibleRows = expanded ? rows : rows.slice(0, initialLimit);
   const hiddenCount = Math.max(0, rows.length - initialLimit);
+
+  // Cálculo de totales
+  const totals = useMemo(() => {
+    const res: Record<string, number> = {};
+    columns.forEach(col => {
+      if (col.isSummable) {
+        res[col.key] = rows.reduce((acc, row) => acc + (Number(row[col.key]) || 0), 0);
+      }
+    });
+    return res;
+  }, [rows, columns]);
 
   return (
     <View style={grid.card}>
@@ -95,6 +109,8 @@ function DataGridCard<T>({
                 </Text>
               ))}
             </View>
+            
+            {/* Filas de datos */}
             {visibleRows.map((row, rowIndex) => (
               <View key={`${title}-${rowIndex}`} style={grid.dataRow}>
                 {columns.map((column) => (
@@ -112,6 +128,27 @@ function DataGridCard<T>({
                 ))}
               </View>
             ))}
+
+            {/* Fila de Totales */}
+            <View style={grid.footerRow}>
+              {columns.map((column) => (
+                <Text
+                  key={`footer-${column.key}`}
+                  style={[
+                    grid.footerCell,
+                    { width: column.width ?? 120 },
+                    column.align === 'right' && grid.right,
+                    column.align === 'center' && grid.center,
+                  ]}
+                >
+                  {column.key === 'desc' 
+                    ? 'Suma Total' 
+                    : column.isSummable 
+                      ? (column.key === 'cantfolios' ? totals[column.key].toString() : formatCurrency(totals[column.key]))
+                      : ''}
+                </Text>
+              ))}
+            </View>
           </View>
         </ScrollView>
       ) : (
@@ -132,10 +169,12 @@ function DataGridCard<T>({
 export default function ImpuestosScreen() {
   const [loading, setLoading] = useState(true);
   const [rawRows, setRawRows] = useState<ImpuestoRow[]>([]);
+  const [f29Calcular, setF29Calcular] = useState<any>(null);
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [showYearPicker, setShowYearPicker] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [loadingF29, setLoadingF29] = useState(false);
   
   // Selector de Ventas / Compras
   const [viewMode, setViewMode] = useState<'ventas' | 'compras'>('ventas');
@@ -148,15 +187,21 @@ export default function ImpuestosScreen() {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+      setLoadingF29(true);
       try {
-        const response = await api.get('/api/dashboard/impuestos-f29', {
-          params: { ...params },
-        });
-        setRawRows(response.data?.data ?? []);
-      } catch {
+        const [respRows, respF29] = await Promise.all([
+          api.get('/api/dashboard/impuestos-f29', { params: { ...params } }),
+          api.get('/api/dashboard/f29-calcular', { params: { ...params } })
+        ]);
+        setRawRows(respRows.data?.data ?? []);
+        setF29Calcular(respF29.data?.data ?? null);
+      } catch (err) {
+        console.error('[impuestos] Error loading data:', err);
         setRawRows([]);
+        setF29Calcular(null);
       } finally {
         setLoading(false);
+        setLoadingF29(false);
       }
     };
     void loadData();
@@ -168,9 +213,9 @@ export default function ImpuestosScreen() {
     
     // Primero ordenamos: TTx y Código SII
     const sorted = [...rawRows].sort((a, b) => {
-      const ttxA = a.ttx ?? 0;
-      const ttxB = b.ttx ?? 0;
-      if (ttxA !== ttxB) return ttxA - ttxB;
+      const ttxA = (a.ttx ?? '').toString();
+      const ttxB = (b.ttx ?? '').toString();
+      if (ttxA !== ttxB) return ttxA.localeCompare(ttxB);
       
       const codA = (a.codigo_s_i_i ?? '').toString();
       const codB = (b.codigo_s_i_i ?? '').toString();
@@ -178,16 +223,13 @@ export default function ImpuestosScreen() {
     });
 
     return sorted.filter(row => {
-      const ttx = row.ttx;
+      const ttxVal = (row.ttx ?? '').toString().toUpperCase();
       
-      // Si tenemos ttx, lo usamos
-      // Asumimos 1=Ventas, 2=Compras por el orden del SP (o al revés, pero probemos con 1=Ventas)
-      // Si no funciona, el debug mostrará los valores de ttx.
-      if (ttx !== undefined && ttx !== null) {
-        if (viewMode === 'ventas') return ttx === 1;
-        return ttx === 2;
+      if (viewMode === 'ventas') {
+        return ttxVal === 'VENTAS' || ttxVal === '1' || ttxVal.includes('VENTA');
+      } else {
+        return ttxVal === 'COMPRAS' || ttxVal === '2' || ttxVal.includes('COMPRA');
       }
-      return true;
     });
   }, [rawRows, viewMode]);
 
@@ -222,10 +264,11 @@ export default function ImpuestosScreen() {
       render: (r) => (r.foliofinal ?? 0).toString() 
     },
     { 
-      key: 'cant', 
+      key: 'cantfolios', 
       title: 'Cant Folios', 
       width: 90, 
       align: 'right', 
+      isSummable: true,
       render: (r) => (r.cantfolios ?? 0).toString() 
     },
     { 
@@ -233,13 +276,15 @@ export default function ImpuestosScreen() {
       title: 'Afecto', 
       width: 110, 
       align: 'right', 
+      isSummable: true,
       render: (r) => formatCurrency(toNumber(r.afecto)) 
     },
     { 
-      key: 'iva', 
+      key: 'i_v_a', 
       title: 'I.v.a', 
       width: 110, 
       align: 'right', 
+      isSummable: true,
       render: (r) => formatCurrency(toNumber(r.i_v_a)) 
     },
     { 
@@ -247,13 +292,15 @@ export default function ImpuestosScreen() {
       title: 'Exento', 
       width: 110, 
       align: 'right', 
+      isSummable: true,
       render: (r) => formatCurrency(toNumber(r.exento)) 
     },
     { 
-      key: 'otros', 
+      key: 'otros_imp', 
       title: 'Otros Imp.', 
       width: 110, 
       align: 'right', 
+      isSummable: true,
       render: (r) => formatCurrency(toNumber(r.otros_imp)) 
     },
     { 
@@ -261,6 +308,7 @@ export default function ImpuestosScreen() {
       title: 'Total', 
       width: 120, 
       align: 'right', 
+      isSummable: true,
       render: (r) => formatCurrency(toNumber(r.total)) 
     },
   ];
@@ -268,6 +316,56 @@ export default function ImpuestosScreen() {
   return (
     <ScreenShell title="Impuestos" subtitle="Resumen IVA (F29)">
       <>
+        {/* Nueva Tabla de Cálculo F29 */}
+        <View style={grid.card}>
+          <Text style={grid.title}>Resumen General F29</Text>
+          <Text style={grid.subtitle}>Cálculo estimado del impuesto para el periodo {selectedMonth}/{selectedYear}</Text>
+          
+          {loadingF29 ? (
+            <ActivityIndicator size="small" color="#2563EB" style={{ marginVertical: 20 }} />
+          ) : f29Calcular ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View>
+                <View style={grid.headerRow}>
+                  <Text style={[grid.headerCell, { width: 80 }]}>Periodo</Text>
+                  <Text style={[grid.headerCell, grid.right, { width: 100 }]}>Iva Compras</Text>
+                  <Text style={[grid.headerCell, grid.right, { width: 110 }]}>Afecto Ventas</Text>
+                  <Text style={[grid.headerCell, grid.right, { width: 100 }]}>Iva Ventas</Text>
+                  <Text style={[grid.headerCell, grid.center, { width: 80 }]}>Tasa PPM</Text>
+                  <Text style={[grid.headerCell, grid.right, { width: 100 }]}>Monto PPM</Text>
+                  <Text style={[grid.headerCell, grid.right, { width: 100 }]}>Remanente</Text>
+                  <Text style={[grid.headerCell, grid.right, { width: 80 }]}>UTM</Text>
+                  <Text style={[grid.headerCell, grid.right, { width: 110, color: '#2563EB' }]}>Total a Pagar</Text>
+                </View>
+                <View style={grid.dataRow}>
+                  <Text style={[grid.dataCell, { width: 80 }]}>{selectedMonth}/{selectedYear}</Text>
+                  <Text style={[grid.dataCell, grid.right, { width: 100 }]}>{formatCurrency(toNumber(f29Calcular.ivacompras))}</Text>
+                  <Text style={[grid.dataCell, grid.right, { width: 110 }]}>{formatCurrency(toNumber(f29Calcular.afectoventas))}</Text>
+                  <Text style={[grid.dataCell, grid.right, { width: 100 }]}>{formatCurrency(toNumber(f29Calcular.ivaventas))}</Text>
+                  <Text style={[grid.dataCell, grid.center, { width: 80 }]}>{formatNumberExact(toNumber(f29Calcular.ppmtasa))}%</Text>
+                  <Text style={[grid.dataCell, grid.right, { width: 100 }]}>{formatCurrency(toNumber(f29Calcular.ppmmonto))}</Text>
+                  <Text style={[grid.dataCell, grid.right, { width: 100 }]}>{formatCurrency(toNumber(f29Calcular.remanente))}</Text>
+                  <Text style={[grid.dataCell, grid.right, { width: 80 }]}>{formatCurrency(toNumber(f29Calcular.utmmes))}</Text>
+                  <Text style={[grid.dataCell, grid.right, { width: 110, fontWeight: '700', color: '#1D4ED8' }]}>{formatCurrency(toNumber(f29Calcular.totalimpuesto))}</Text>
+                </View>
+              </View>
+            </ScrollView>
+          ) : (
+            <Text style={grid.emptyText}>No se pudo cargar el resumen general.</Text>
+          )}
+
+          <View style={ui.infoBox}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <Ionicons name="information-circle" size={18} color="#1D4ED8" />
+              <Text style={ui.infoTitle}>Importante:</Text>
+            </View>
+            <Text style={ui.infoText}>• Pago calculado al 23/01/26 a las 15:41:00 hrs</Text>
+            <Text style={ui.infoText}>• Incluye TODOS los DTE's de Ventas</Text>
+            <Text style={ui.infoText}>• Verifique haber registrado todos los DTE's de COMPRAS</Text>
+            <Text style={ui.infoText}>• Verifique que su tasa de PPM sea la correcta</Text>
+          </View>
+        </View>
+
         {/* Filtro de Periodo */}
         <FilterRow title="Consultar periodo">
           <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -314,12 +412,12 @@ export default function ImpuestosScreen() {
           initialLimit={15}
         />
 
-        {/* Panel de Depuración (siempre visible si hay datos pero no se muestran) */}
+        {/* Panel de Ayuda */}
         {!loading && rawRows.length > 0 && filteredData.length === 0 && (
           <View style={ui.debugCard}>
-            <Text style={ui.debugTitle}>Ayuda técnica:</Text>
-            <Text style={ui.debugText}>Se recibieron {rawRows.length} filas pero ninguna coincide con el filtro ttx={viewMode === 'ventas' ? 1 : 2}.</Text>
-            <Text style={ui.debugText}>Valores ttx disponibles: {Array.from(new Set(rawRows.map(r => r.ttx))).join(', ')}</Text>
+            <Text style={ui.debugTitle}>Información del sistema:</Text>
+            <Text style={ui.debugText}>Se recibieron {rawRows.length} filas pero no coinciden con el modo {viewMode}.</Text>
+            <Text style={ui.debugText}>Valores ttx detectados: {Array.from(new Set(rawRows.map(r => r.ttx))).join(', ')}</Text>
           </View>
         )}
 
@@ -435,6 +533,25 @@ const ui = StyleSheet.create({
   debugTitle: { fontSize: 13, fontWeight: '700', color: '#92400E', marginBottom: 4 },
   debugText: { fontSize: 12, color: '#B45309' },
   debugKeys: { fontSize: 11, color: '#B45309', fontFamily: 'monospace', marginTop: 4 },
+  infoBox: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+  },
+  infoTitle: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E40AF',
+  },
+  infoText: {
+    fontSize: 12,
+    color: '#1E40AF',
+    lineHeight: 18,
+  },
 });
 
 const grid = StyleSheet.create({
@@ -479,6 +596,19 @@ const grid = StyleSheet.create({
     paddingVertical: 7,
     fontSize: 11,
     color: '#0F172A',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderTopWidth: 2,
+    borderTopColor: '#334155',
+  },
+  footerCell: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E293B',
   },
   right: {
     textAlign: 'right',
