@@ -127,14 +127,15 @@ const openAttachment = async (
   }
 };
 
-/** Inicia una transacción de solo lectura (READ_COMMITTED + READ_ONLY). */
-const startReadOnlyTransaction = async (
-  attachment: Attachment
+/** Inicia una transacción. Por defecto es de solo lectura. */
+const startDbTransaction = async (
+  attachment: Attachment,
+  readWrite?: boolean
 ): Promise<Transaction> =>
   attachment.startTransaction({
     isolation: 'READ_COMMITTED' as any,
     readCommittedMode: 'RECORD_VERSION',
-    accessMode: 'READ_ONLY',
+    accessMode: readWrite ? 'READ_WRITE' : 'READ_ONLY',
   });
 
 /**
@@ -149,10 +150,10 @@ const startReadOnlyTransaction = async (
 export const query = async <T extends object = Record<string, unknown>>(
   sql: string,
   params: unknown[] = [],
-  options: FirebirdConnectionConfig = config.firebird as any
+  options: FirebirdConnectionConfig & { readWrite?: boolean } = config.firebird as any
 ): Promise<T[]> => {
   const { client, attachment } = await openAttachment(options);
-  const transaction = await startReadOnlyTransaction(attachment);
+  const transaction = await startDbTransaction(attachment, options.readWrite);
 
   try {
     const resultSet = await attachment.executeQuery(transaction, sql, params);

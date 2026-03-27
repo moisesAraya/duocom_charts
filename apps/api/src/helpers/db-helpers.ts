@@ -276,14 +276,14 @@ export const runProcedure = async (
   dbConfig: FirebirdConnectionConfig,
   name: string,
   params: unknown[] = [],
-  options?: { limit?: number; forceQuote?: boolean }
+  options?: { limit?: number; forceQuote?: boolean; readWrite?: boolean }
 ): Promise<NormalizedRow[]> => {
   // NO truncar fechas a solo día: pasar el Date completo para TIMESTAMP
   const normalizedParams = params.map((value) => value);
   const sql = buildProcedureSql(name, params, options?.limit, options?.forceQuote);
   console.log('[runProcedure][DEBUG] SQL generado:', { sql, normalizedParams, name, params });
   try {
-    const rows = await query<Record<string, unknown>>(sql, normalizedParams, dbConfig);
+    const rows = await query<Record<string, unknown>>(sql, normalizedParams, { ...dbConfig, readWrite: options?.readWrite });
     return rows.map(normalizeRow);
   } catch (error) {
     const message = error instanceof Error ? error.message.toLowerCase() : '';
@@ -295,7 +295,7 @@ export const runProcedure = async (
     ) {
       try {
         const quotedSql = buildProcedureSql(name, params, options?.limit, true);
-        const rows = await query<Record<string, unknown>>(quotedSql, normalizedParams, dbConfig);
+        const rows = await query<Record<string, unknown>>(quotedSql, normalizedParams, { ...dbConfig, readWrite: options?.readWrite });
         return rows.map(normalizeRow);
       } catch (retryError) {
         // continue to log original error below

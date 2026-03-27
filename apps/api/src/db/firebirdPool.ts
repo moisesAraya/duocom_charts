@@ -142,13 +142,14 @@ const openAttachment = async (
   }
 };
 
-const startReadOnlyTransaction = async (
-  attachment: Attachment
+const startDbTransaction = async (
+  attachment: Attachment,
+  readWrite?: boolean
 ): Promise<Transaction> =>
   attachment.startTransaction({
     isolation: 'READ_COMMITTED' as any,
     readCommittedMode: 'RECORD_VERSION',
-    accessMode: 'READ_ONLY',
+    accessMode: readWrite ? 'READ_WRITE' : 'READ_ONLY',
   });
 
 /* ═══════════════════════════════════════════
@@ -275,13 +276,13 @@ setInterval(() => {
  * de solo lectura y devuelve la conexión al pool.
  */
 export const executeQuery = async <T extends object = Record<string, unknown>>(
-  options: FirebirdConnectionConfig,
+  options: FirebirdConnectionConfig & { readWrite?: boolean },
   sql: string,
   params: unknown[] = []
 ): Promise<T[]> => {
   const pool = getOrCreatePool(options);
   const entry = await acquireFromPool(pool);
-  const transaction = await startReadOnlyTransaction(entry.attachment);
+  const transaction = await startDbTransaction(entry.attachment, options.readWrite);
 
   try {
     const resultSet = await entry.attachment.executeQuery(transaction, sql, params);
