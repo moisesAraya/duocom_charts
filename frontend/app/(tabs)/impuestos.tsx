@@ -350,6 +350,8 @@ export default function ImpuestosScreen() {
                 </View>
               </View>
             </ScrollView>
+          ) : (
+            <Text style={grid.emptyText}>No se pudo cargar el resumen general.</Text>
           )}
         </View>
 

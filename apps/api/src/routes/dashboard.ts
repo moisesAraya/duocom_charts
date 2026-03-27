@@ -1702,7 +1702,7 @@ router.get('/dashboard/f29-calcular', async (req, res, next) => {
     const ano = parseNumber(toString(req.query.ano), end.getFullYear());
     const mes = parseNumber(toString(req.query.mes), end.getMonth() + 1);
 
-    const rows = await runProcedure(dbConfig, 'spF29Calcular', [ano, mes]);
+    const rows = await runProcedure(dbConfig, 'spF29Calcular', [ano, mes], { forceQuote: true });
     console.log(`[f29-calcular] ${rows.length} rows found for ${ano}-${mes}`);
     
     // El SP devuelve una sola fila con los totales
