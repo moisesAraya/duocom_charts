@@ -1,3 +1,4 @@
+
 /**
  * ventas.tsx — Pestaña de Ventas del dashboard.
  *
@@ -18,11 +19,9 @@ import { api } from "@/constants/api";
 import { ChartCard } from "@/components/dashboard/chart-card";
 import { ScreenShell } from "@/components/dashboard/screen-shell";
 import { useDashboardFilters } from "@/components/dashboard/filters-context";
-import { DetailModal } from "@/components/dashboard/detail-modal";
 import {
   formatCompact,
   formatCurrency,
-  formatMoneyCompact,
   formatDateInput,
   sparsifyLabels,
 } from "@/components/dashboard/utils";
@@ -65,7 +64,6 @@ interface GrupoVentaRow {
 interface VentaTiempoRealRow {
   fechaHora: string;
   totalAcumulado: number;
-  montoHora: number;
 }
 
 interface VentasTiempoRealKpis {
@@ -98,7 +96,6 @@ const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[]
     points.push({
       fechaHora: cursor.toISOString(),
       totalAcumulado: acumulado,
-      montoHora: Math.round(base + wave),
     });
 
     cursor = new Date(cursor.getTime() + 30 * 60 * 1000);
@@ -106,7 +103,7 @@ const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[]
   }
 
   if (!points.length) {
-    return [{ fechaHora: now.toISOString(), totalAcumulado: 0, montoHora: 0 }];
+    return [{ fechaHora: now.toISOString(), totalAcumulado: 0 }];
   }
 
   return points;
@@ -118,6 +115,12 @@ const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[]
 
 const truncateLabel = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max)}...` : value;
+
+// Truncar nombres de sucursal para gráficos y selectores
+const truncateSucursal = (nombre: string, max = 10) => {
+  if (!nombre) return '';
+  return nombre.length > max ? nombre.slice(0, max) + '…' : nombre;
+};
 
 const SERIES_COLORS = [
   "59,130,246",
@@ -181,6 +184,21 @@ function calcStepFromMax(maxValue: number) {
 ========================= */
 
 export default function VentasScreen() {
+
+
+
+
+    // ...existing state and hooks...
+
+
+    // ...existing state and hooks...
+
+    // Place derived hooks and helpers here, after all state/hooks and derived variables
+
+    // ...existing state, useEffect, and derived variables...
+
+
+
   const { requestParams = {} } = useDashboardFilters();
   const { width, height } = useWindowDimensions();
   const isPortrait = height >= width;
@@ -221,9 +239,6 @@ export default function VentasScreen() {
   const [ventasTiempoRealKpis, setVentasTiempoRealKpis] = useState<VentasTiempoRealKpis | null>(
     null,
   );
-  const [showVTRModal, setShowVTRModal] = useState(false);
-  const [showAnualesModal, setShowAnualesModal] = useState(false);
-  const [showSucursalModal, setShowSucursalModal] = useState(false);
 
   /* =========================
      DERIVED PARAMS
@@ -264,9 +279,7 @@ export default function VentasScreen() {
           .filter((r: any) => r)
           .map((r: any) => ({
             grupo: String(r.grupo || r.Grupo || r.GRUPO || "").trim(),
-            monto: toNumber(
-              r.monto || r.Monto || r.MONTO || r.total || r.Total || r.TOTAL,
-            ),
+            monto: toNumber(r.total), // El backend responde con 'total'
           })),
       );
     } catch {
@@ -326,7 +339,7 @@ export default function VentasScreen() {
   const loadVentasTiempoReal = useCallback(async () => {
     setLoadingVentasTiempoReal(true);
     try {
-      const res = await api.get('/api/dashboard/ventas-tiempo-real', {
+      const res = await api.get('/api/dashboard/venta-minuto', {
         params: { ...baseRequestParams, limit: 240 },
       });
 
@@ -347,8 +360,7 @@ export default function VentasScreen() {
       const rows = (res.data?.data ?? [])
         .map((row: any) => ({
           fechaHora: String(row.fechaHora || row.fecha_hora || ''),
-          montoHora: toNumber(row.montoHora ?? row.monto_hora ?? row.venta_hora ?? 0),
-          totalAcumulado: toNumber(row.totalAcumulado ?? row.total_acumulado ?? 0),
+          totalAcumulado: toNumber(row.totalAcumulado ?? row.total_acumulado),
         }))
         .filter((row: VentaTiempoRealRow) => row.fechaHora);
 
@@ -382,6 +394,10 @@ export default function VentasScreen() {
   }, [loadVentasAnuales]);
   useEffect(() => {
     void loadVentasTiempoReal();
+    const id = setInterval(() => {
+      void loadVentasTiempoReal();
+    }, 30_000);
+    return () => clearInterval(id);
   }, [loadVentasTiempoReal]);
 
   const loadAllData = useCallback(async () => {
@@ -434,45 +450,7 @@ export default function VentasScreen() {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }, [ventasTiempoReal]);
 
-  const horaConsulta = useMemo(() => {
-    if (!ultimaConsultaTiempoReal) return '--:--:--';
-    return `${String(ultimaConsultaTiempoReal.getHours()).padStart(2, '0')}:${String(
-      ultimaConsultaTiempoReal.getMinutes(),
-    ).padStart(2, '0')}:${String(ultimaConsultaTiempoReal.getSeconds()).padStart(2, '0')}`;
-  }, [ultimaConsultaTiempoReal]);
-
-  const formatTicketCount = useCallback((value: number | null | undefined) => {
-    if (value === null || value === undefined) return '--';
-    return Math.round(value).toLocaleString('es-CL');
-  }, []);
-
-  const frecuenciaVentasLabel = useMemo(() => {
-    const frecuencia = ventasTiempoRealKpis?.frecuenciaVentaMinutos;
-    if (frecuencia === null || frecuencia === undefined) return '--';
-    return `${frecuencia.toFixed(1)} min/ticket`;
-  }, [ventasTiempoRealKpis]);
-
-  const promedioTicketsDiaMesLabel = useMemo(() => {
-    const promedio = ventasTiempoRealKpis?.promedioTicketsDiarioMes;
-    if (promedio === null || promedio === undefined) return '--';
-    return promedio.toFixed(1);
-  }, [ventasTiempoRealKpis]);
-
-  const ventasTiempoRealDetalle = useMemo(() => {
-    return ventasTiempoReal
-      .map((row) => {
-        const d = new Date(row.fechaHora);
-        const hora = Number.isNaN(d.getTime())
-          ? row.fechaHora
-          : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        return {
-          fechaHora: row.fechaHora,
-          hora,
-          total: row.totalAcumulado,
-          montoHora: row.montoHora,
-        };
-      });
-  }, [ventasTiempoReal]);
+  // Removed invalid useMemo for horaConsulta. If needed, reimplement with correct logic and dependencies.
 
   const onRefreshVentasTiempoReal = useCallback(() => {
     void loadVentasTiempoReal();
@@ -494,6 +472,15 @@ export default function VentasScreen() {
       new Set(ventasAnuales.map((r) => r.sucursal).filter(Boolean)),
     );
   }, [ventasAnuales]);
+
+  // Mapeo sucursal original → truncada
+  const sucursalLabelMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    ventasAnualesBranches.forEach((suc) => {
+      map[suc] = truncateSucursal(suc, 10);
+    });
+    return map;
+  }, [ventasAnualesBranches]);
 
   const [enabledVentasAnualesBranches, setEnabledVentasAnualesBranches] =
     useState<string[]>([]);
@@ -527,6 +514,21 @@ export default function VentasScreen() {
     );
   };
 
+
+
+  const ventasSucursalRows = useMemo(() => {
+    const totals = new Map<string, number>();
+    ventasAnuales.forEach((row) => {
+      totals.set(row.sucursal, (totals.get(row.sucursal) ?? 0) + row.total);
+    });
+    return Array.from(totals.entries())
+      .map(([sucursal, total]) => ({ sucursal, total }))
+      .filter(({ sucursal }) => enabledVentasSucursalBranches.includes(sucursal))
+      .sort((a, b) => b.total - a.total);
+  }, [ventasAnuales, enabledVentasSucursalBranches]);
+
+
+
   const ventasAnualesData = useMemo(() => {
     const filteredBranches = ventasAnualesBranches.filter((b) =>
       enabledVentasAnualesBranches.includes(b),
@@ -543,116 +545,95 @@ export default function VentasScreen() {
         data: yearsWithPadding.map((year) =>
           ventasAnuales
             .filter(
-              (row) =>
-                row &&
-                row.sucursal &&
-                row.anio !== undefined &&
-                row.sucursal === branch &&
-                row.anio === year,
+              (r) => r.sucursal === branch && r.anio === year,
             )
-            .reduce((acc, row) => acc + row.total, 0),
+            .map((r) => r.total)[0] ?? 0,
         ),
-        color: (o: number) => `rgba(${getBranchColor(branch, idx)},${o})`,
+        color: () => `rgba(${getBranchColor(branch, idx)},1)`,
         strokeWidth: 2,
+        withDots: true,
+        legendLabel: sucursalLabelMap[branch] || branch,
       })),
-      legend: filteredBranches.map((branch) => truncateLabel(branch, 10)),
     };
-  }, [
-    ventasAnuales,
-    ventasAnualesBranches,
-    ventasAnualesYears,
-    enabledVentasAnualesBranches,
-  ]);
+  }, [ventasAnuales, ventasAnualesBranches, enabledVentasAnualesBranches, ventasAnualesYears, sucursalLabelMap]);
 
-  const ventasSucursalRows = useMemo(() => {
-    const totals = new Map<string, number>();
-    ventasAnuales.forEach((row) => {
-      totals.set(row.sucursal, (totals.get(row.sucursal) ?? 0) + row.total);
-    });
-    return Array.from(totals.entries())
-      .map(([sucursal, total]) => ({ sucursal, total }))
-      .filter(({ sucursal }) => enabledVentasSucursalBranches.includes(sucursal))
-      .sort((a, b) => b.total - a.total);
-  }, [ventasAnuales, enabledVentasSucursalBranches]);
+  /* =========================
+     DERIVED HOOKS & HELPERS (must be after all dependencies)
+  ========================= */
+
+  const formatTicketCount = (value: number | null | undefined) =>
+    typeof value === 'number' && Number.isFinite(value)
+      ? value.toLocaleString('es-CL')
+      : '--';
 
   const ventasSucursalLabels = useMemo(
     () => ventasSucursalRows.map((row) => row.sucursal),
     [ventasSucursalRows],
   );
 
-  const ventasSucursalChart = useMemo(
-    () => ({
-      labels: sparsifyLabels(
-        ventasSucursalLabels.map((label) => truncateLabel(label, 10)),
-        8,
-      ),
-      datasets: [
-        {
-          data: ventasSucursalRows.map((row) => row.total),
-          colors: ventasSucursalLabels.map(
-            (label, idx) => (o: number) =>
-              `rgba(${getBranchColor(label, idx)},${o})`,
-          ),
-        },
-      ],
-    }),
-    [ventasSucursalLabels, ventasSucursalRows],
+  const promedioTicketsDiaMesLabel = useMemo(() => {
+    if (!ventasTiempoRealKpis || !Number.isFinite(ventasTiempoRealKpis.promedioTicketsDiarioMes)) return '--';
+    return formatTicketCount(ventasTiempoRealKpis.promedioTicketsDiarioMes);
+  }, [ventasTiempoRealKpis]);
+
+  const frecuenciaVentasLabel = useMemo(() => {
+    if (!ventasTiempoRealKpis || ventasTiempoRealKpis.frecuenciaVentaMinutos == null) return '--';
+    return `${ventasTiempoRealKpis.frecuenciaVentaMinutos} min`;
+  }, [ventasTiempoRealKpis]);
+
+  const horaConsulta = useMemo(() => {
+    if (!ventasTiempoReal.length) return '--:--';
+    const d = new Date(ventasTiempoReal[ventasTiempoReal.length - 1].fechaHora);
+    if (Number.isNaN(d.getTime())) return '--:--';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }, [ventasTiempoReal]);
+
+  const ventasTiempoRealDetalle = useMemo(() =>
+    ventasTiempoReal.map((row) => ({
+      ...row,
+      hora: (() => {
+        const d = new Date(row.fechaHora);
+        return Number.isNaN(d.getTime())
+          ? '--:--'
+          : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      })(),
+    })),
+    [ventasTiempoReal],
   );
 
-  const ventasSucursalMax = useMemo(() => {
-    const vals = ventasSucursalRows.map((r) => r.total);
-    return vals.length ? Math.max(...vals) : 0;
+  const ventasSucursalYAxisStep = useMemo(() => {
+    if (!ventasSucursalRows.length) return 1;
+    const max = Math.max(...ventasSucursalRows.map((r) => r.total / 1_000_000));
+    return calcStepFromMax(max);
   }, [ventasSucursalRows]);
 
-  const ventasSucursalYAxisStep = useMemo(
-    () => calcStepFromMax(ventasSucursalMax),
-    [ventasSucursalMax],
-  );
-
-  /* =========================
-     CHART: VENTAS POR MEDIO DE PAGO (BAR)
-  ========================= */
-
-  const ventasMedioPagoLabels = useMemo(() => {
-    return Array.from(new Set(ventasMedioPago.map((r) => r.medio_pago)));
-  }, [ventasMedioPago]);
-
-  const ventasMedioPagoChartLabels = useMemo(
-    () =>
-      sparsifyLabels(
-        ventasMedioPagoLabels.map((label) => truncateLabel(label, 10)),
-        8,
-      ),
-    [ventasMedioPagoLabels],
-  );
-
-  const ventasMedioPagoData = useMemo(() => {
-    const map = new Map<string, number>();
-    ventasMedioPago.filter((r) => r && r.medio_pago).forEach((r) => {
-      map.set(r.medio_pago, (map.get(r.medio_pago) ?? 0) + r.monto);
-    });
-
+  const ventasGrupoData = useMemo(() => {
+    if (!ventasGrupo.length) return { labels: [], datasets: [] };
     return {
-      labels: ventasMedioPagoChartLabels,
+      labels: ventasGrupo.map((g) => truncateLabel(g.grupo, 12)),
       datasets: [
         {
-          data: ventasMedioPagoLabels.map((l) => map.get(l) ?? 0),
-          color: (o: number) => `rgba(59,130,246,${o})`,
+          data: ventasGrupo.map((g) => g.monto),
         },
       ],
     };
-  }, [ventasMedioPago, ventasMedioPagoChartLabels, ventasMedioPagoLabels]);
-
-  /* =========================
-     CHART: VENTAS POR GRUPO (PIE)
-  ========================= */
-
-  const ventasGrupoData = useMemo(() => {
-    return {
-      labels: ventasGrupo.map((r) => r.grupo),
-      datasets: [{ data: ventasGrupo.map((r) => r.monto) }],
-    };
   }, [ventasGrupo]);
+
+  const ventasSucursalChart = useMemo(() => ({
+    labels: sparsifyLabels(
+      ventasSucursalLabels.map((label) => truncateLabel(label, 10)),
+      8,
+    ),
+    datasets: [
+      {
+        data: ventasSucursalRows.map((row) => row.total / 1_000_000),
+        colors: ventasSucursalLabels.map(
+          (label, idx) => (o: number) =>
+            `rgba(${getBranchColor(label, idx)},${o})`,
+        ),
+      },
+    ],
+  }), [ventasSucursalLabels, ventasSucursalRows]);
 
   /* =========================
      RENDER
@@ -724,10 +705,10 @@ export default function VentasScreen() {
             <View style={styles.rtActionsRow}>
               <Pressable
                 style={[styles.detailButton, styles.rtSecondaryButton]}
-                onPress={() => setShowVTRModal(true)}
+                onPress={() => setShowVentasTiempoRealDetalle((prev) => !prev)}
               >
                 <Text style={[styles.detailButtonText, styles.rtSecondaryButtonText]}>
-                  Ver detalle
+                  {showVentasTiempoRealDetalle ? 'Ocultar detalle' : 'Ver detalle'}
                 </Text>
               </Pressable>
               <Pressable
@@ -743,6 +724,26 @@ export default function VentasScreen() {
             {ventasTiempoRealEsMock && (
               <Text style={styles.rtMockBadge}>Mostrando datos de prueba</Text>
             )}
+            {showVentasTiempoRealDetalle && (
+              <View style={styles.rtDetailPanel}>
+                <Text style={styles.rtDetailTitle}>Historial completo ({ventasTiempoRealDetalle.length} registros)</Text>
+                <ScrollView
+                  style={styles.rtDetailScroll}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                >
+                  {ventasTiempoRealDetalle.map((row) => (
+                    <View key={`${row.fechaHora}-${row.totalAcumulado}`} style={styles.rtDetailRow}>
+                      <Text style={styles.rtDetailTime}>{row.hora}</Text>
+                      <Text style={styles.rtDetailValue}>{formatCurrency(row.totalAcumulado)}</Text>
+                    </View>
+                  ))}
+                  {!ventasTiempoRealDetalle.length && (
+                    <Text style={styles.rtDetailEmpty}>Sin movimientos para mostrar.</Text>
+                  )}
+                </ScrollView>
+              </View>
+            )}
           </View>
         }
         data={ventasTiempoRealData}
@@ -752,28 +753,15 @@ export default function VentasScreen() {
         height={260}
         xLabel="Hora"
         yLabel="Acumulado"
-        formatValue={formatMoneyCompact}
+        formatValue={formatCompact}
         formatDetailValue={formatCurrency}
-        formatAxisValue={formatMoneyCompact}
+        formatAxisValue={formatCompact}
         scrollable
         minWidth={Math.max(chartWidth, ventasTiempoReal.length * 42)}
         isLoading={loadingVentasTiempoReal}
         isEmpty={!ventasTiempoReal.length}
         detailLabels={ventasTiempoRealLabels}
         hideHint={true}
-      />
-
-      <DetailModal
-        visible={showVTRModal}
-        onClose={() => setShowVTRModal(false)}
-        title="Detalle de Ventas Tiempo Real"
-        subtitle={`Consulta realizada: ${horaConsulta}`}
-        headers={["Hora", "Venta Bloque", "Total Acum."]}
-        rows={ventasTiempoRealDetalle.map(row => ({
-          label: row.hora,
-          values: [row.montoHora, row.total]
-        }))}
-        accentColor="#10B981"
       />
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -824,10 +812,10 @@ export default function VentasScreen() {
               <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
                 <Pressable
                   style={styles.detailButton}
-                  onPress={() => setShowAnualesModal(true)}
+                  onPress={() => setShowVentasAnualesValues(!showVentasAnualesValues)}
                 >
                   <Text style={styles.detailButtonText}>
-                    Ver detalle
+                    {showVentasAnualesValues ? "Ocultar valores" : "Ver detalle"}
                   </Text>
                 </Pressable>
               </View>
@@ -839,10 +827,10 @@ export default function VentasScreen() {
           width={chartWidth}
           height={280}
           xLabel="Años"
-          yLabel="Ventas ($M)"
-          formatValue={(v) => `$${(v / 1_000_000).toFixed(0)}M`}
-          formatDetailValue={(v) => `$${(v / 1_000_000).toFixed(2)}M`}
-          formatAxisValue={(v) => `$${(v / 1_000_000).toFixed(0)}M`}
+          yLabel="Ventas (M)"
+          formatValue={(v) => `${(v / 1_000_000).toFixed(0)}M`}
+          formatDetailValue={(v) => `${(v / 1_000_000).toFixed(2)}M`}
+          formatAxisValue={(v) => `${(v / 1_000_000).toFixed(0)}M`}
           yAxisInterval={200_000_000}
           scrollable={false}
           minWidth={ventasAnualesYears.length * 60}
@@ -850,34 +838,14 @@ export default function VentasScreen() {
           isEmpty={!ventasAnuales.length || !enabledVentasAnualesBranches.length}
           detailLabels={ventasAnualesYears.map((year) => String(year))}
           detailTrigger="tap"
-          showValuesOnTop={false}
+          showValuesOnTop={showVentasAnualesValues}
           hideHint={true}
-        />
-
-        <DetailModal
-          visible={showAnualesModal}
-          onClose={() => setShowAnualesModal(false)}
-          title="Ventas por Año"
-          subtitle="Resumen anual acumulado por sucursal"
-          headers={["Año", "Venta Total"]}
-          rows={ventasAnualesYears.map(year => {
-            const total = enabledVentasAnualesBranches.reduce((acc, br) => {
-              return acc + ventasAnuales
-                .filter(r => r.anio === year && r.sucursal === br)
-                .reduce((s, r) => s + r.total, 0);
-            }, 0);
-            return {
-              label: String(year),
-              values: [total]
-            };
-          })}
         />
       </ScrollView>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <ChartCard
-          title="Ventas totales por sucursal"
-          subtitle="Acumulado histórico (últimos 5 años)"
+          title="Ventas por sucursal"
           headerContent={
             <View>
               {ventasAnualesBranches.length > 1 && (
@@ -916,10 +884,10 @@ export default function VentasScreen() {
               <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
                 <Pressable
                   style={styles.detailButton}
-                  onPress={() => setShowSucursalModal(true)}
+                  onPress={() => setShowVentasSucursalValues(!showVentasSucursalValues)}
                 >
                   <Text style={styles.detailButtonText}>
-                    Ver detalle
+                    {showVentasSucursalValues ? "Ocultar valores" : "Ver detalle"}
                   </Text>
                 </Pressable>
               </View>
@@ -931,31 +899,18 @@ export default function VentasScreen() {
           width={chartWidth}
           height={300}
           xLabel="Sucursales"
-          yLabel="Ventas ($M)"
-          yAxisSuffix=""
-          formatValue={formatMoneyCompact}
-          formatDetailValue={(v: number) => `$${(v / 1_000_000).toFixed(2)}M`}
-          formatAxisValue={(v: number) => `$${(v / 1_000_000).toFixed(0)}M`}
+          yLabel="Ventas (M)"
+          yAxisSuffix="M"
+          formatValue={formatCompact}
+          formatDetailValue={(v) => `${v.toFixed(0)}M`}
           yAxisInterval={ventasSucursalYAxisStep}
           scrollable={false}
           minWidth={Math.max(chartWidth, ventasSucursalLabels.length * 45)}
           isLoading={loadingVentasAnuales}
           isEmpty={!ventasSucursalRows.length}
           detailLabels={ventasSucursalLabels}
-          showValuesOnTop={false}
+          showValuesOnTop={showVentasSucursalValues}
           hideHint={true}
-        />
-
-        <DetailModal
-          visible={showSucursalModal}
-          onClose={() => setShowSucursalModal(false)}
-          title="Ventas por Sucursal"
-          subtitle="Acumulado histórico (últimos 5 años)"
-          headers={["Sucursal", "Venta Total"]}
-          rows={ventasSucursalRows.map(row => ({
-            label: row.sucursal,
-            values: [row.total]
-          }))}
         />
       </ScrollView>
 
@@ -1067,8 +1022,6 @@ export default function VentasScreen() {
         colorRgb="245,158,11"
         width={chartWidth}
         height={280}
-        scrollable
-        minWidth={chartWidth + 160} // ✅ Más ancho para que la leyenda no se corte
         formatDetailValue={formatCurrency}
         isLoading={loadingVentasGrupo}
         isEmpty={!ventasGrupo.length}
@@ -1331,7 +1284,7 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                             key={`val-${anios[idx]}-${idx}`}
                             style={{ width: 90, padding: 8, textAlign: "right" }}
                           >
-                            {formatMoneyCompact(val)}
+                            {formatCompact(val)}
                           </Text>
                         ))}
                         <Text
@@ -1343,7 +1296,7 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
                             color: "#3B82F6",
                           }}
                         >
-                          {formatMoneyCompact(totalMes)}
+                          {formatCompact(totalMes)}
                         </Text>
                       </View>
                     ))}
@@ -1434,7 +1387,7 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   const formatMillions2 = useCallback((v: number) => {
     const n = Number(v);
     if (!Number.isFinite(n)) return "0.00M";
-    return `$${(n / 1_000_000).toFixed(2)}M`;
+    return `${(n / 1_000_000).toFixed(2)}M`;
   }, []);
 
   useEffect(() => {
@@ -1601,16 +1554,12 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   const openFullScreen = useCallback(async () => {
     setZoom(1);
     try {
-      // ✅ Bloqueamos orientación primero
       await ScreenOrientation.lockAsync(
         ScreenOrientation.OrientationLock.LANDSCAPE,
       );
-      // ✅ Pequeña pausa técnica (150ms) antes de mostrar el Modal
-      setTimeout(() => {
-        setFsVisible(true);
-      }, 150);
-    } catch (e) {
-      console.error("Error locking orientation:", e);
+    } catch {
+      // no-op
+    } finally {
       setFsVisible(true);
     }
   }, []);
@@ -1739,14 +1688,14 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
         width={chartWidth}
         height={400}
         xLabel="Días del mes"
-        yLabel="Ventas ($)"
+        yLabel="Ventas"
         isLoading={loading}
         isEmpty={chartData.datasets.length === 0}
         hideHint
         scrollable
         minWidth={xMinWidth}
         yAxisInterval={yAxisStepM}
-        formatAxisValue={formatMoneyCompact}
+        formatAxisValue={formatCompact}
         formatDetailValue={formatCurrency}
         dotRadius={4}
       />
@@ -1823,9 +1772,7 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
                   fromZero
                   // ✅ Valores en cada punto (solo fullscreen), con 2 decimales en M
                   renderDotContent={({ x, y, index, indexData }) => {
-                    // Solo mostrar valores si el zoom es alto (> 1.2) para evitar saturación y crashes
-                    if (zoom < 1.2) return null;
-                    
+                    // Si hay MUCHAS series, puede saturar. Si quieres, lo limito a zoom>=1.5
                     const v = Number(indexData);
                     if (!Number.isFinite(v) || v === 0) return null;
 
@@ -1943,6 +1890,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    width: '100%',
+    maxWidth: '100%',
   },
   chip: {
     paddingHorizontal: 12,

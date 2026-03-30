@@ -1507,6 +1507,39 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     const branchesLower = branches.map(b => b.toLowerCase().trim());
 
+
+    // Adaptación: buscar el primer campo de tipo fecha/hora si los nombres estándar no existen
+    const getFechaFromRow = (row) => {
+      let rawFecha =
+        row.fecha_hora ??
+        row.fechahora ??
+        row.fecha ??
+        row.fec_hora ??
+        row.hora;
+      if (!rawFecha) {
+        // Buscar el primer campo tipo Date o string parseable a fecha
+        for (const key of Object.keys(row)) {
+          const val = row[key];
+          if (val instanceof Date && !Number.isNaN(val.getTime())) {
+            rawFecha = val;
+            break;
+          }
+          if (typeof val === 'string') {
+            const d = new Date(val);
+            if (!Number.isNaN(d.getTime()) && d.getFullYear() > 2000) {
+              rawFecha = d;
+              break;
+            }
+          }
+        }
+      }
+      return rawFecha instanceof Date
+        ? rawFecha
+        : rawFecha
+        ? new Date(String(rawFecha))
+        : null;
+    };
+
     const data = rows
       .map(row => {
         const sucursalRaw = getSucursalFromRow(row);
@@ -1515,20 +1548,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
         }
         const sucursal = normalizeBranch(sucursalRaw);
 
-        const rawFecha =
-          row.fecha_hora ??
-          row.fechahora ??
-          row.fecha ??
-          row.fec_hora ??
-          row.hora;
-
-        const fecha =
-          rawFecha instanceof Date
-            ? rawFecha
-            : rawFecha
-              ? new Date(String(rawFecha))
-              : null;
-
+        const fecha = getFechaFromRow(row);
         if (!fecha || Number.isNaN(fecha.getTime())) {
           return null;
         }
