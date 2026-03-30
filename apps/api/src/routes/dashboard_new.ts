@@ -281,6 +281,7 @@ router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
 // Detalle de ventas individuales (por transacción)
 router.get('/dashboard/venta-minuto', async (req, res, next) => {
   try {
+    console.log('[VENTA-MINUTO][DEBUG] INICIO endpoint /dashboard/venta-minuto');
     const dbConfig = getDbConfig(req);
     // Obtener la fecha desde el query param 'fecha', o usar hoy si no viene
     const fechaParam = req.query.fecha;
@@ -288,10 +289,11 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
     if (!fecha) fecha = new Date();
     const limit = parseLimit(req.query.limit, 2000);
     const branches = parseSucursalList(req.query.sucursal);
+    console.log('[VENTA-MINUTO][DEBUG] Antes de runProcedure', { fecha, limit, branches });
     // Llamar al nuevo SP con solo la fecha
     const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [fecha], { limit });
+    console.log('[VENTA-MINUTO][DEBUG] Después de runProcedure, filas:', rows.length);
     // Log para depuración: cantidad de filas y claves de la primera fila
-    console.log('[VENTA-MINUTO][DEBUG] Filas devueltas:', rows.length);
     if (rows.length > 0) {
       console.log('[VENTA-MINUTO][DEBUG] Claves de la primera fila:', Object.keys(rows[0]));
       console.log('[VENTA-MINUTO][DEBUG] Primera fila:', rows[0]);
@@ -325,8 +327,10 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
       ranking: toNumber(row['Ranking'])
     })).filter(row => (branches.length ? branches.includes(row.sucursal) : true));
 
+    console.log('[VENTA-MINUTO][DEBUG] FIN endpoint /dashboard/venta-minuto, data.length:', data.length);
     res.json({ success: true, data });
   } catch (error) {
+    console.error('[VENTA-MINUTO][ERROR]', error);
     next(error);
   }
 });
