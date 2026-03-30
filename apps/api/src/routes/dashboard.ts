@@ -1475,15 +1475,14 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
     try {
       console.log('[ventas-tiempo-real][DEBUG] Llamando _Web_VtaAlMin con:', {
         dbConfig,
-        params: [startOfDay, now],
+        params: [startOfDay],
         limit,
-        startOfDay,
-        now
+        startOfDay
       });
       rows = await runProcedure(
         dbConfig,
         '_Web_VtaAlMin',
-        [startOfDay, now],
+        [startOfDay],
         { limit },
       );
     } catch (error) {
