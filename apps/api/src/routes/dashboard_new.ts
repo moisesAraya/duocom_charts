@@ -290,6 +290,12 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
     const branches = parseSucursalList(req.query.sucursal);
     // Llamar al nuevo SP con solo la fecha
     const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [fecha], { limit });
+    // Log para depuración: cantidad de filas y claves de la primera fila
+    console.log('[VENTA-MINUTO][DEBUG] Filas devueltas:', rows.length);
+    if (rows.length > 0) {
+      console.log('[VENTA-MINUTO][DEBUG] Claves de la primera fila:', Object.keys(rows[0]));
+      console.log('[VENTA-MINUTO][DEBUG] Primera fila:', rows[0]);
+    }
     // Mapeo flexible de columnas (algunos nombres pueden variar)
     const data = rows.map(row => ({
       sucursal: toString(row.sucursal) || toString(row['Sucursal']) || toString(row['descripcion_sucursal']) || toString(row['nombre_sucursal']) || toString(row['Id# Sucursal']) || '',
