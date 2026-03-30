@@ -316,6 +316,26 @@ export default function ImpuestosScreen() {
   return (
     <ScreenShell title="Impuestos" subtitle="Resumen IVA (F29)">
       <>
+        {/* Filtro de Periodo */}
+        <FilterRow title="Consultar periodo">
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={ui.label}>Año</Text>
+              <Pressable style={ui.picker} onPress={() => setShowYearPicker(true)}>
+                <Text style={ui.pickerText}>{selectedYear}</Text>
+              </Pressable>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={ui.label}>Mes</Text>
+              <Pressable style={ui.picker} onPress={() => setShowMonthPicker(true)}>
+                <Text style={ui.pickerText}>
+                  {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][selectedMonth - 1]}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </FilterRow>
+
         {/* Nueva Tabla de Cálculo F29 */}
         <View style={grid.card}>
           <Text style={grid.title}>Resumen General F29</Text>
@@ -354,26 +374,6 @@ export default function ImpuestosScreen() {
             <Text style={grid.emptyText}>No se pudo cargar el resumen general.</Text>
           )}
         </View>
-
-        {/* Filtro de Periodo */}
-        <FilterRow title="Consultar periodo">
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={ui.label}>Año</Text>
-              <Pressable style={ui.picker} onPress={() => setShowYearPicker(true)}>
-                <Text style={ui.pickerText}>{selectedYear}</Text>
-              </Pressable>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={ui.label}>Mes</Text>
-              <Pressable style={ui.picker} onPress={() => setShowMonthPicker(true)}>
-                <Text style={ui.pickerText}>
-                  {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][selectedMonth - 1]}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </FilterRow>
 
         {/* Selector de Compras / Ventas */}
         <View style={ui.modeContainer}>

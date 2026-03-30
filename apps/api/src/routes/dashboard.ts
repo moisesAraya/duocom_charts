@@ -541,17 +541,41 @@ router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
 router.get('/dashboard/venta-minuto', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
-    const { start, end } = getDateRange(req.query as Record<string, unknown>);
+    // Obtener la fecha desde el query param 'fecha', o usar hoy si no viene
+    const fechaParam = req.query.fecha;
+    let fecha = parseDateParam(fechaParam);
+    if (!fecha) fecha = new Date();
     const limit = parseLimit(req.query.limit, 2000);
     const branches = parseSucursalList(req.query.sucursal);
-    const rows = await runProcedure(dbConfig, 'zResumenVentas', [start, end], { limit });
+    // Llamar al nuevo SP con solo la fecha
+    const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [fecha], { limit });
+    // Mapeo flexible de columnas (algunos nombres pueden variar)
     const data = rows.map(row => ({
-      fecha: row.fecha,
-      sucursal: toString(row.descripcion_sucursal),
-      total: toNumber(row.total),
-      saldo: toNumber(row.saldo),
-      documento: toString(row.n_documento),
-      medio_pago: toString(row.descripcion_medio_de_pago),
+      sucursal: toString(row.sucursal) || toString(row['Sucursal']) || toString(row['descripcion_sucursal']) || toString(row['nombre_sucursal']) || toString(row['Id# Sucursal']) || '',
+      objetivo_mensual: toNumber(row['Objetivo$ Mensual']),
+      obj_tickets_mes: toNumber(row['Obj Tickets Mes']),
+      venta_dia: toNumber(row['Venta Día']),
+      ticket_dia: toNumber(row['Ticket Día']),
+      ticket_prom_dia: toNumber(row['Ticket Prom Día']),
+      venta_acum_mes: toNumber(row['Venta Acum Mes']),
+      ticket_acum_mes: toNumber(row['Ticket Acum Mes']),
+      ticket_prom_mes: toNumber(row['Ticket Prom Mes']),
+      ticket_x_min: toNumber(row['Ticket x Min']),
+      ticket_x_hora: toNumber(row['Ticket x Hora']),
+      pct_objetivo_total: toNumber(row['% del Objetivo Total']),
+      pct_avance_objetivo: toNumber(row['% Avance Objetivo']),
+      semaforo: toString(row['Semáforo$']),
+      pct_av_ticket_mes: toNumber(row['% Av Ticket Mes']),
+      sem_ticket: toString(row['Sem Ticket']),
+      proyeccion: toNumber(row['Proyección$']),
+      pct_proyeccion: toNumber(row['% Proyección']),
+      semaforo_proy: toString(row['Semáforo Proy']),
+      brecha_objetivo: toNumber(row['Brecha$ Objetivo']),
+      brecha_proyeccion: toNumber(row['Brecha$ Proyección']),
+      nuevo_objetivo_diario: toNumber(row['Nuevo Objetivo Diario']),
+      dias_laborales: toString(row['Dias/Laborales']),
+      pct_periodo_transcurrido: toNumber(row['% Período Transcurrido']),
+      ranking: toNumber(row['Ranking'])
     })).filter(row => (branches.length ? isBranchMatch(row.sucursal, branches) : true));
 
     res.json({ success: true, data });
