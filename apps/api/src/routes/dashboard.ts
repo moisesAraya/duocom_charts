@@ -1473,7 +1473,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
 
     let rows: NormalizedRow[] = [];
     try {
-      console.log('[ventas-tiempo-real][DEBUG] Llamando WEB_VENTASTIEMPOREAL con:', {
+      console.log('[ventas-tiempo-real][DEBUG] Llamando _Web_VtaAlMin con:', {
         dbConfig,
         params: [startOfDay, now],
         limit,
@@ -1482,7 +1482,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       });
       rows = await runProcedure(
         dbConfig,
-        'Web_VentasTiempoReal',
+        '_Web_VtaAlMin',
         [startOfDay, now],
         { limit },
       );
@@ -1490,10 +1490,10 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       console.error('[ventas-tiempo-real] ERROR AL EJECUTAR SP:', error);
       const message = error instanceof Error ? error.message.toLowerCase() : '';
       if (message.includes('procedure unknown') || message.includes('procedure not found')) {
-        warning = 'No existe Web_VentasTiempoReal en esta base de datos';
+        warning = 'No existe _Web_VtaAlMin en esta base de datos';
       } else {
         // Enviar error detallado para ver en logs
-        return res.status(500).json({ success: false, error: String(error), sql: 'Web_VentasTiempoReal' });
+        return res.status(500).json({ success: false, error: String(error), sql: '_Web_VtaAlMin' });
       }
     }
 
