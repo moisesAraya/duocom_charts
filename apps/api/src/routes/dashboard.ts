@@ -53,14 +53,49 @@ const isBranchMatch = (rowSucursal: string, filters: string[]): boolean => {
   });
 };
 
-/** Fila de SP normalizada: coincide filtro si el nombre O el id de sucursal calza (ej. filtro "1" vs id_sucursal). */
+/**
+ * Nombre sucursal en fila SP (sin usar id numérico como “nombre”).
+ */
+const getBranchLabelFromRow = (row: NormalizedRow): string =>
+  toString(row.sucursal) ||
+  toString(row.descripcion_sucursal) ||
+  toString(row.nombre_sucursal) ||
+  toString(row.nombre) ||
+  toString(row.descripcion) ||
+  getSucursalFromRow(row);
+
+/** Id sucursal en fila normalizada (varía por SP). */
+const getBranchIdFromRow = (row: NormalizedRow): string =>
+  toString(
+    row.id_sucursal ??
+      row.idsucursal ??
+      row.cod_sucursal ??
+      row.sucursal_id ??
+      row.id_bodega ??
+      row.codigo_sucursal,
+  );
+
+/**
+ * Fila SP vs filtros desde la app (ids numéricos y/o nombres).
+ * Tokens solo dígitos = coincidencia estricta por id (evita que "1" matchee id 12).
+ */
 const rowMatchesBranches = (row: NormalizedRow, filters: string[]): boolean => {
   if (!filters.length) return true;
-  const name = getSucursalFromRow(row);
-  const id = toString(
-    row.id_sucursal ?? row.idsucursal ?? row.cod_sucursal ?? row.id_sucursal_catalog,
-  );
-  return isBranchMatch(name, filters) || (Boolean(id) && isBranchMatch(id, filters));
+  const name = getBranchLabelFromRow(row);
+  const idStr = getBranchIdFromRow(row);
+  return filters.some(f => {
+    const raw = f.trim();
+    if (!raw) return false;
+    if (/^\d+$/.test(raw)) {
+      const want = Number(raw);
+      if (idStr !== '' && !Number.isNaN(Number(idStr)) && Number(idStr) === want) return true;
+      if (idStr === '' || Number.isNaN(Number(idStr))) {
+        return isBranchMatch(name, [f]);
+      }
+      return false;
+    }
+    return isBranchMatch(name, [f]) || (idStr !== '' && isBranchMatch(idStr, [f]));
+  });
 };
 
 // Middleware para loguear dbConfig en cada request del dashboard
@@ -879,13 +914,8 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       return map;
     };
 
-    let byHour = fillByHour(pvtRows, true);
-    if (pvtRows.length > 0 && byHour.size === 0 && branches.length > 0) {
-      byHour = fillByHour(pvtRows, false);
-      console.warn(
-        '[ventas-tiempo-real-hora] filtro sucursal dejó Pvt vacío; serie sin filtrar por sucursal',
-      );
-    }
+    // Solo filas que calzan con sucursales elegidas (nunca sumar “todas” si hay filtro)
+    const byHour = fillByHour(pvtRows, branches.length > 0);
 
     let data: Pt[] = [];
     let cumMonto = 0;
