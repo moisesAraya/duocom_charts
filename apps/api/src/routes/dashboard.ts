@@ -679,47 +679,75 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       return;
     }
 
-    // Usar offset del cliente para respetar su reloj local (evita desfases UTC/servidor).
+    // Importante: calculamos en UTC (evita que el timezone del servidor altere la hora).
+    // JS tzOffsetMin: minutos desde UTC para el timezone local del cliente.
+    // En términos simples: local = utc - offset.
     const tzOffsetMinRaw = Number(req.query.tzOffsetMin ?? 0);
     const tzOffsetMin = Number.isFinite(tzOffsetMinRaw) ? tzOffsetMinRaw : 0;
 
-    const atLocal = new Date(at.getTime() - tzOffsetMin * 60_000);
-    const startLocal = new Date(atLocal);
-    startLocal.setHours(8, 0, 0, 0);
-    const endLocal = new Date(atLocal);
+    // Convertimos "at" (UTC) a "hora local del cliente" (representada como valores UTC).
+    const endLocalAsUtc = new Date(at.getTime() - tzOffsetMin * 60_000);
+    const startLocalAsUtc = new Date(endLocalAsUtc.getTime());
+    startLocalAsUtc.setUTCHours(8, 0, 0, 0);
 
-    const start = new Date(startLocal.getTime() + tzOffsetMin * 60_000);
-    const end = new Date(endLocal.getTime() + tzOffsetMin * 60_000);
+    // Volvemos a UTC para pasar al SP (timestamp absoluto).
+    const start = new Date(startLocalAsUtc.getTime() + tzOffsetMin * 60_000);
+    const end = new Date(endLocalAsUtc.getTime() + tzOffsetMin * 60_000);
 
     const limit = parseLimit(req.query.limit, 3000);
     const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
 
+    console.log('[ventas-tiempo-real-hora][DEBUG] input', {
+      at: at.toISOString(),
+      tzOffsetMin,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      branches,
+      rowsCount: rows.length,
+    });
+    console.log('[ventas-tiempo-real-hora][DEBUG] sampleRow', rows.slice(0, 5).map(r => ({
+      hora: r.hora,
+      t_bruto: r.t_bruto,
+      cant_docs: r.cant_docs,
+      sucursal: r.sucursal,
+      id_sucursal: r.id_sucursal ?? r.idsucursal,
+      keys: Object.keys(r).slice(0, 12),
+    })));
+
     // Agrupar total por hora (sumando sucursales), luego convertir a acumulado.
     const hourlyTotals = new Map<number, { monto: number; tickets: number }>();
     for (const row of rows) {
-      const sucursal =
-        toString(readField(row, 'sucursal')) ||
-        toString(readField(row, 'Sucursal')) ||
-        'N/A';
-      if (branches.length && !isBranchMatch(sucursal, branches)) continue;
+      // runProcedure normaliza claves (normalizeRow), por eso usamos claves ya "limpias".
+      const sucursalNombre =
+        toString(row.sucursal ?? row.descripcion_sucursal ?? row.nombre_sucursal ?? '');
+      const sucursalId =
+        toString(row.id_sucursal ?? row.idsucursal ?? row.id ?? row.codigo ?? '');
 
-      const hora = Math.trunc(
-        toNumber(readField(row, 'hora') || readField(row, 'Hora')),
-      );
+      if (
+        branches.length &&
+        !(
+          isBranchMatch(sucursalNombre, branches) ||
+          isBranchMatch(sucursalId, branches)
+        )
+      ) {
+        continue;
+      }
+
+      const horaRaw = toNumber(row.hora ?? row.HORA ?? row.Hora);
+      const hora = Math.trunc(horaRaw);
       if (!Number.isFinite(hora) || hora < 0 || hora > 23) continue;
 
       const monto =
-        toNumber(readField(row, 'T/Bruto')) ||
-        toNumber(readField(row, 't_bruto')) ||
-        toNumber(readField(row, 'total')) ||
-        toNumber(readField(row, 'monto')) ||
-        toNumber(readField(row, 'venta'));
+        toNumber(row.t_bruto) ||
+        toNumber(row.total) ||
+        toNumber(row.monto) ||
+        toNumber(row.venta);
 
       const tickets =
-        toNumber(readField(row, 'Cant/Docs')) ||
-        toNumber(readField(row, 'cant_docs')) ||
-        toNumber(readField(row, 'Ticket')) ||
-        toNumber(readField(row, 'ticket'));
+        toNumber(row.cant_docs) ||
+        toNumber(row.cant_docs_total) ||
+        toNumber(row.ticket) ||
+        toNumber(row.cantdocs);
 
       const prev = hourlyTotals.get(hora) ?? { monto: 0, tickets: 0 };
       hourlyTotals.set(hora, {
@@ -729,7 +757,7 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
     }
 
     const startHour = 8;
-    const endHour = endLocal.getHours();
+    const endHour = endLocalAsUtc.getUTCHours();
     let acumulado = 0;
     let ticketsAcumulados = 0;
     const data: Array<{
@@ -745,12 +773,12 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       acumulado += slot.monto;
       ticketsAcumulados += slot.tickets;
 
-      const dLocal = new Date(endLocal);
-      dLocal.setHours(h, 0, 0, 0);
-      const d = new Date(dLocal.getTime() + tzOffsetMin * 60_000);
+      const slotLocalAsUtc = new Date(endLocalAsUtc.getTime());
+      slotLocalAsUtc.setUTCHours(h, 0, 0, 0);
+      const slotUtc = new Date(slotLocalAsUtc.getTime() + tzOffsetMin * 60_000);
 
       data.push({
-        fechaHora: d.toISOString(),
+        fechaHora: slotUtc.toISOString(),
         hora: h,
         totalAcumulado: acumulado,
         ticketsHora: slot.tickets,
