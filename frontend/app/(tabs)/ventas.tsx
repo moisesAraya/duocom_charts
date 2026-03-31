@@ -12,8 +12,15 @@ import {
 } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import { Text as SvgText } from "react-native-svg";
+import { BranchMultiSelect } from "@/components/dashboard/branch-multi-select";
 import { ChartCard } from "@/components/dashboard/chart-card";
-import { useDashboardFilters } from "@/components/dashboard/filters-context";
+import {
+  branchQueryParamsFromIds,
+  canonicalBranchId,
+  isRowSucursalInSelection,
+  unionCanonicalIds,
+  useDashboardFilters,
+} from "@/components/dashboard/filters-context";
 import { ScreenShell } from "@/components/dashboard/screen-shell";
 import {
   formatCompact,
@@ -81,8 +88,6 @@ const toNumber = (value: unknown): number => {
 const truncateLabel = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max)}...` : value;
 
-const truncateSucursal = (value: string, max: number) => truncateLabel(value, max);
-
 const getBranchColor = (branch: string, fallbackIndex = 0): string => {
   if (!branch) return SERIES_COLORS[fallbackIndex % SERIES_COLORS.length];
   let hash = 0;
@@ -118,18 +123,75 @@ export default function VentasScreen() {
     requestParams = {},
     sucursalesReady,
     sucursales,
-    selectedSucursales,
-    toggleSucursal,
-    selectAllSucursales,
   } = useDashboardFilters();
 
+  /** Selección por gráfico (independiente del filtro global de otras pestañas). */
+  const [selTiempoReal, setSelTiempoReal] = useState<string[]>([]);
+  const [selAnuales, setSelAnuales] = useState<string[]>([]);
+  const [selBar, setSelBar] = useState<string[]>([]);
+  const [selGrupo, setSelGrupo] = useState<string[]>([]);
+  const [branchChartsReady, setBranchChartsReady] = useState(false);
+  const branchSelInitRef = useRef(false);
+
+  useEffect(() => {
+    if (!sucursalesReady) return;
+    if (!sucursales.length) {
+      setBranchChartsReady(true);
+      return;
+    }
+    if (branchSelInitRef.current) return;
+    branchSelInitRef.current = true;
+    const all = sucursales.map((s) => s.id);
+    setSelTiempoReal([all[0]]);
+    setSelAnuales(all);
+    setSelBar(all);
+    setSelGrupo(all);
+    setBranchChartsReady(true);
+  }, [sucursalesReady, sucursales]);
+
+  const toggleIn = useCallback((setter: React.Dispatch<React.SetStateAction<string[]>>) => {
+    return (id: string) => {
+      setter((prev) => {
+        const c = canonicalBranchId(id);
+        if (prev.some((p) => canonicalBranchId(p) === c)) {
+          return prev.filter((p) => canonicalBranchId(p) !== c);
+        }
+        return [...prev, id];
+      });
+    };
+  }, []);
+
+  const selectAllFor = useCallback(
+    (setter: React.Dispatch<React.SetStateAction<string[]>>) => () => {
+      setter(sucursales.map((s) => s.id));
+    },
+    [sucursales],
+  );
+
+  const clearFor = useCallback(
+    (setter: React.Dispatch<React.SetStateAction<string[]>>) => () => {
+      setter([]);
+    },
+    [],
+  );
+
+  const idsAnualesUnion = useMemo(
+    () => unionCanonicalIds(selAnuales, selBar),
+    [selAnuales, selBar],
+  );
+
+  const selectSoloTiempoReal = useCallback((id: string) => {
+    setSelTiempoReal([id]);
+  }, []);
+
   const tiempoRealLineRgb = useMemo(() => {
-    const sel = sucursales.filter((s) => selectedSucursales.includes(s.id));
-    if (sel.length === 1) return getBranchColor(sel[0].nombre, 0);
-    if (sel.length === 0) return "16, 185, 129";
-    const fused = sel.map((s) => s.nombre).sort().join("|");
-    return getBranchColor(fused, 0);
-  }, [sucursales, selectedSucursales]);
+    const id = selTiempoReal[0];
+    const one = id
+      ? sucursales.find((s) => canonicalBranchId(s.id) === canonicalBranchId(id))
+      : undefined;
+    if (one) return getBranchColor(one.nombre, 0);
+    return "16, 185, 129";
+  }, [sucursales, selTiempoReal]);
 
   const [anoMP, setAnoMP] = useState(() => new Date().getFullYear());
   const [mesMP, setMesMP] = useState(() => new Date().getMonth() + 1);
@@ -177,9 +239,10 @@ export default function VentasScreen() {
   const ventasAnualesParams = useMemo(
     () => ({
       ...baseRequestParams,
+      ...branchQueryParamsFromIds(sucursales, idsAnualesUnion),
       years: 5,
     }),
-    [baseRequestParams],
+    [baseRequestParams, sucursales, idsAnualesUnion],
   );
 
   /* =========================
@@ -190,7 +253,10 @@ export default function VentasScreen() {
     setLoadingVentasGrupo(true);
     try {
       const res = await api.get("/api/dashboard/ventas-por-grupo", {
-        params: baseRequestParams,
+        params: {
+          ...baseRequestParams,
+          ...branchQueryParamsFromIds(sucursales, selGrupo),
+        },
       });
       setVentasGrupo(
         (res.data?.data ?? [])
@@ -205,7 +271,7 @@ export default function VentasScreen() {
     } finally {
       setLoadingVentasGrupo(false);
     }
-  }, [baseRequestParams]);
+  }, [baseRequestParams, sucursales, selGrupo]);
 
   const loadVentasMedioPago = useCallback(async () => {
     setLoadingVentasMedioPago(true);
@@ -257,10 +323,16 @@ export default function VentasScreen() {
   const loadVentasTiempoReal = useCallback(async (clickedAt?: Date) => {
     const seq = ++ventasTiempoRealReqSeq.current;
     setLoadingVentasTiempoReal(true);
+    setVentasTiempoReal([]);
+    setVentasTiempoRealKpis(null);
     const requestMoment = clickedAt ?? new Date();
     try {
-      const hourlyParams = {
+      const trParams = {
         ...baseRequestParams,
+        ...branchQueryParamsFromIds(sucursales, selTiempoReal),
+      };
+      const hourlyParams = {
+        ...trParams,
         at: requestMoment.toISOString(),
         tzOffsetMin: requestMoment.getTimezoneOffset(),
       };
@@ -268,7 +340,7 @@ export default function VentasScreen() {
       const [hourlySettled, snapshotSettled] = await Promise.allSettled([
         api.get("/api/dashboard/ventas-tiempo-real-hora", { params: hourlyParams }),
         api.get("/api/dashboard/venta-minuto", {
-          params: { ...baseRequestParams, limit: 240 },
+          params: { ...trParams, limit: 240 },
         }),
       ]);
 
@@ -322,10 +394,6 @@ export default function VentasScreen() {
         ];
       }
 
-      setVentasTiempoReal(series);
-      setVentasTiempoRealEsMock(false);
-
-      if (seq !== ventasTiempoRealReqSeq.current) return;
       const totalVentaDia = snapshotRows.reduce(
         (acc: number, r: any) => acc + toNumber(r.venta_dia),
         0,
@@ -351,8 +419,12 @@ export default function VentasScreen() {
       const minutesSince8 =
         Math.max(0, requestMoment.getHours() - 8) * 60 + requestMoment.getMinutes();
 
+      // Una sola comprobación antes de actualizar UI: si no, se podía actualizar la serie
+      // y omitir KPIs si otra petición incrementó seq entre medias (gráfico vs cajas desalineados).
       if (seq !== ventasTiempoRealReqSeq.current) return;
 
+      setVentasTiempoReal(series);
+      setVentasTiempoRealEsMock(false);
       setVentasTiempoRealKpis({
         ticketPromedioDiario:
           totalTicketsDia > 0 ? totalVentaDia / totalTicketsDia : 0,
@@ -377,27 +449,27 @@ export default function VentasScreen() {
         setUltimaConsultaTiempoReal(new Date());
       }
     }
-  }, [baseRequestParams]);
+  }, [baseRequestParams, sucursales, selTiempoReal]);
 
   useEffect(() => {
-    if (!sucursalesReady) return;
+    if (!sucursalesReady || !branchChartsReady) return;
     void loadVentasGrupo();
-  }, [sucursalesReady, loadVentasGrupo]);
+  }, [sucursalesReady, branchChartsReady, loadVentasGrupo]);
 
   useEffect(() => {
-    if (!sucursalesReady) return;
+    if (!sucursalesReady || !branchChartsReady) return;
     void loadVentasMedioPago();
-  }, [sucursalesReady, loadVentasMedioPago]);
+  }, [sucursalesReady, branchChartsReady, loadVentasMedioPago]);
 
   useEffect(() => {
-    if (!sucursalesReady) return;
+    if (!sucursalesReady || !branchChartsReady) return;
     void loadVentasAnuales();
-  }, [sucursalesReady, loadVentasAnuales]);
+  }, [sucursalesReady, branchChartsReady, loadVentasAnuales, idsAnualesUnion]);
 
   useEffect(() => {
-    if (!sucursalesReady) return;
+    if (!sucursalesReady || !branchChartsReady) return;
     void loadVentasTiempoReal(new Date());
-  }, [sucursalesReady, loadVentasTiempoReal]);
+  }, [sucursalesReady, branchChartsReady, loadVentasTiempoReal, selTiempoReal]);
 
   const loadAllData = useCallback(async () => {
     setRefreshing(true);
@@ -441,6 +513,12 @@ export default function VentasScreen() {
     [ventasTiempoReal],
   );
 
+  const acumuladoDiaTiempoRealLabel = useMemo(() => {
+    if (loadingVentasTiempoReal && ventasTiempoReal.length === 0) return '--';
+    if (!ventasTiempoReal.length) return '--';
+    return formatCurrency(totalAcumuladoHoy);
+  }, [loadingVentasTiempoReal, ventasTiempoReal.length, totalAcumuladoHoy]);
+
   const ultimaActualizacion = useMemo(() => {
     if (!ventasTiempoReal.length) return '--:--';
     const d = new Date(ventasTiempoReal[ventasTiempoReal.length - 1].fechaHora);
@@ -456,79 +534,47 @@ export default function VentasScreen() {
      CHART: VENTAS POR AÑO (LINE)
   ========================= */
 
+  const ventasAnualesForLine = useMemo(
+    () =>
+      ventasAnuales.filter((r) =>
+        isRowSucursalInSelection(r.sucursal, sucursales, selAnuales),
+      ),
+    [ventasAnuales, sucursales, selAnuales],
+  );
+
+  const ventasAnualesForBar = useMemo(
+    () =>
+      ventasAnuales.filter((r) =>
+        isRowSucursalInSelection(r.sucursal, sucursales, selBar),
+      ),
+    [ventasAnuales, sucursales, selBar],
+  );
+
   const ventasAnualesYears = useMemo(() => {
-    const years = Array.from(new Set(ventasAnuales.map((r) => r.anio))).filter(
+    const years = Array.from(new Set(ventasAnualesForLine.map((r) => r.anio))).filter(
       (year) => Number.isFinite(year),
     );
     return years.sort((a, b) => a - b);
-  }, [ventasAnuales]);
+  }, [ventasAnualesForLine]);
 
   const ventasAnualesBranches = useMemo(() => {
     return Array.from(
-      new Set(ventasAnuales.map((r) => r.sucursal).filter(Boolean)),
+      new Set(ventasAnualesForLine.map((r) => r.sucursal).filter(Boolean)),
     );
-  }, [ventasAnuales]);
-
-  // Mapeo sucursal original → truncada
-  const sucursalLabelMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    ventasAnualesBranches.forEach((suc) => {
-      map[suc] = truncateSucursal(suc, 10);
-    });
-    return map;
-  }, [ventasAnualesBranches]);
-
-  const [enabledVentasAnualesBranches, setEnabledVentasAnualesBranches] =
-    useState<string[]>([]);
-
-  useEffect(() => {
-    setEnabledVentasAnualesBranches(ventasAnualesBranches);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ventasAnualesBranches.join(",")]);
-
-  const toggleVentasAnualesBranch = (branch: string) => {
-    setEnabledVentasAnualesBranches((prev) =>
-      prev.includes(branch)
-        ? prev.filter((b) => b !== branch)
-        : [...prev, branch],
-    );
-  };
-
-  const [enabledVentasSucursalBranches, setEnabledVentasSucursalBranches] =
-    useState<string[]>([]);
-
-  useEffect(() => {
-    setEnabledVentasSucursalBranches(ventasAnualesBranches);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ventasAnualesBranches.join(",")]);
-
-  const toggleVentasSucursalBranch = (branch: string) => {
-    setEnabledVentasSucursalBranches((prev) =>
-      prev.includes(branch)
-        ? prev.filter((b) => b !== branch)
-        : [...prev, branch],
-    );
-  };
-
-
+  }, [ventasAnualesForLine]);
 
   const ventasSucursalRows = useMemo(() => {
     const totals = new Map<string, number>();
-    ventasAnuales.forEach((row) => {
+    ventasAnualesForBar.forEach((row) => {
       totals.set(row.sucursal, (totals.get(row.sucursal) ?? 0) + row.total);
     });
     return Array.from(totals.entries())
       .map(([sucursal, total]) => ({ sucursal, total }))
-      .filter(({ sucursal }) => enabledVentasSucursalBranches.includes(sucursal))
       .sort((a, b) => b.total - a.total);
-  }, [ventasAnuales, enabledVentasSucursalBranches]);
-
-
+  }, [ventasAnualesForBar]);
 
   const ventasAnualesData = useMemo(() => {
-    const filteredBranches = ventasAnualesBranches.filter((b) =>
-      enabledVentasAnualesBranches.includes(b),
-    );
+    const filteredBranches = ventasAnualesBranches;
 
     // Agregar un año anterior al primero para crear espacio
     const firstYear = ventasAnualesYears[0];
@@ -539,7 +585,7 @@ export default function VentasScreen() {
       labels: yearLabels,
       datasets: filteredBranches.map((branch, idx) => ({
         data: yearsWithPadding.map((year) =>
-          ventasAnuales
+          ventasAnualesForLine
             .filter(
               (r) => r.sucursal === branch && r.anio === year,
             )
@@ -548,10 +594,9 @@ export default function VentasScreen() {
         color: () => `rgba(${getBranchColor(branch, idx)},1)`,
         strokeWidth: 2,
         withDots: true,
-        legendLabel: sucursalLabelMap[branch] || branch,
       })),
     };
-  }, [ventasAnuales, ventasAnualesBranches, enabledVentasAnualesBranches, ventasAnualesYears, sucursalLabelMap]);
+  }, [ventasAnualesForLine, ventasAnualesBranches, ventasAnualesYears]);
 
   /* =========================
      DERIVED HOOKS & HELPERS (must be after all dependencies)
@@ -562,8 +607,8 @@ export default function VentasScreen() {
       ? value.toLocaleString('es-CL')
       : '--';
 
-  const ventasSucursalLabels = useMemo(
-    () => ventasSucursalRows.map((row) => row.sucursal),
+  const ventasSucursalDetailLabels = useMemo(
+    () => ventasSucursalRows.map((_, i) => `#${i + 1}`),
     [ventasSucursalRows],
   );
 
@@ -617,19 +662,19 @@ export default function VentasScreen() {
 
   const ventasSucursalChart = useMemo(() => ({
     labels: sparsifyLabels(
-      ventasSucursalLabels.map((label) => truncateLabel(label, 10)),
+      ventasSucursalRows.map((_, i) => String(i + 1)),
       8,
     ),
     datasets: [
       {
         data: ventasSucursalRows.map((row) => row.total / 1_000_000),
-        colors: ventasSucursalLabels.map(
-          (label, idx) => (o: number) =>
-            `rgba(${getBranchColor(label, idx)},${o})`,
+        colors: ventasSucursalRows.map(
+          (row, idx) => (o: number) =>
+            `rgba(${getBranchColor(row.sucursal, idx)},${o})`,
         ),
       },
     ],
-  }), [ventasSucursalLabels, ventasSucursalRows]);
+  }), [ventasSucursalRows]);
 
   /* =========================
      RENDER
@@ -642,51 +687,18 @@ export default function VentasScreen() {
         headerContent={
           <View style={styles.rtHeaderBlock}>
             {sucursales.length > 0 ? (
-              <View style={{ marginBottom: 12 }}>
-                <View style={styles.chipsWrap}>
-                  {sucursales.map((s, idx) => {
-                    const enabled = selectedSucursales.includes(s.id);
-                    const rgb = getBranchColor(s.nombre, idx);
-                    return (
-                      <Pressable
-                        key={s.id}
-                        onPress={() => toggleSucursal(s.id)}
-                        style={[
-                          styles.chip,
-                          {
-                            backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
-                            borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.chipText,
-                            { color: enabled ? "#0f172a" : "#94a3b8" },
-                          ]}
-                        >
-                          {truncateLabel(s.nombre, 14)}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                {sucursales.length > 1 ? (
-                  <Pressable
-                    onPress={selectAllSucursales}
-                    style={{ alignSelf: "flex-end", paddingVertical: 6 }}
-                  >
-                    <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "600" }}>
-                      Marcar todas
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
+              <BranchMultiSelect
+                variant="inline"
+                single
+                value={selTiempoReal}
+                onToggle={selectSoloTiempoReal}
+                scopeHint="Tiempo real"
+              />
             ) : null}
             <View style={styles.rtKpiRow}>
               <View style={styles.rtKpiBox}>
                 <Text style={styles.rtKpiLabel}>Acumulado del día</Text>
-                <Text style={styles.rtKpiValue}>{formatCurrency(totalAcumuladoHoy)}</Text>
+                <Text style={styles.rtKpiValue}>{acumuladoDiaTiempoRealLabel}</Text>
               </View>
               <View style={styles.rtKpiBox}>
                 <Text style={styles.rtKpiLabel}>Dato hasta</Text>
@@ -806,44 +818,21 @@ export default function VentasScreen() {
           title="Ventas por año"
           headerContent={
             <View>
+              {sucursales.length > 0 ? (
+                <BranchMultiSelect
+                  variant="inline"
+                  value={selAnuales}
+                  onToggle={toggleIn(setSelAnuales)}
+                  onSelectAll={selectAllFor(setSelAnuales)}
+                  onClear={clearFor(setSelAnuales)}
+                  scopeHint="Por año"
+                />
+              ) : null}
               {ventasAnualesYears.length > 6 && (
                 <View style={{ marginBottom: 8 }}>
                   <Text style={{ fontSize: 12, color: "#666", textAlign: "center" }}>
                     Años disponibles: {ventasAnualesYears.join(" • ")}
                   </Text>
-                </View>
-              )}
-              {ventasAnualesBranches.length > 1 && (
-                <View style={{ marginBottom: 12 }}>
-                  <Text style={{ fontSize: 12, color: "#666", marginBottom: 8, fontWeight: "600" }}>Filtrar por sucursal:</Text>
-                  <View style={styles.chipsWrap}>
-                    {ventasAnualesBranches.map((branch, idx) => {
-                      const enabled = enabledVentasAnualesBranches.includes(branch);
-                      const rgb = getBranchColor(branch, idx);
-                      return (
-                        <Pressable
-                          key={branch}
-                          onPress={() => toggleVentasAnualesBranch(branch)}
-                          style={[
-                            styles.chip,
-                            {
-                              backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
-                              borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.chipText,
-                              { color: enabled ? "#000" : "#999" },
-                            ]}
-                          >
-                            {truncateLabel(branch, 12)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
                 </View>
               )}
               <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
@@ -872,11 +861,12 @@ export default function VentasScreen() {
           scrollable={false}
           minWidth={ventasAnualesYears.length * 60}
           isLoading={loadingVentasAnuales}
-          isEmpty={!ventasAnuales.length || !enabledVentasAnualesBranches.length}
+          isEmpty={!ventasAnualesForLine.length || !ventasAnualesBranches.length}
           detailLabels={ventasAnualesYears.map((year) => String(year))}
           detailTrigger="tap"
           showValuesOnTop={showVentasAnualesValues}
           hideHint={true}
+          hideLegend={ventasAnualesBranches.length > 1}
         />
       </ScrollView>
 
@@ -885,39 +875,16 @@ export default function VentasScreen() {
           title="Ventas por sucursal"
           headerContent={
             <View>
-              {ventasAnualesBranches.length > 1 && (
-                <View style={{ marginBottom: 12 }}>
-                  <Text style={{ fontSize: 12, color: "#666", marginBottom: 8, fontWeight: "600" }}>Filtrar por sucursal:</Text>
-                  <View style={styles.chipsWrap}>
-                    {ventasAnualesBranches.map((branch, idx) => {
-                      const enabled = enabledVentasSucursalBranches.includes(branch);
-                      const rgb = getBranchColor(branch, idx);
-                      return (
-                        <Pressable
-                          key={branch}
-                          onPress={() => toggleVentasSucursalBranch(branch)}
-                          style={[
-                            styles.chip,
-                            {
-                              backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
-                              borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
-                            },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.chipText,
-                              { color: enabled ? "#000" : "#999" },
-                            ]}
-                          >
-                            {truncateLabel(branch, 12)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
+              {sucursales.length > 0 ? (
+                <BranchMultiSelect
+                  variant="inline"
+                  value={selBar}
+                  onToggle={toggleIn(setSelBar)}
+                  onSelectAll={selectAllFor(setSelBar)}
+                  onClear={clearFor(setSelBar)}
+                  scopeHint="Ranking barras"
+                />
+              ) : null}
               <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
                 <Pressable
                   style={styles.detailButton}
@@ -935,17 +902,17 @@ export default function VentasScreen() {
           colorRgb="59,130,246"
           width={chartWidth}
           height={300}
-          xLabel="Sucursales"
+          xLabel="Orden"
           yLabel="Ventas ($M)"
           yAxisSuffix="M"
           formatValue={(v) => `$${formatCompact(v)}`}
           formatDetailValue={(v) => `$${v.toFixed(0)}M`}
           yAxisInterval={ventasSucursalYAxisStep}
           scrollable={false}
-          minWidth={Math.max(chartWidth, ventasSucursalLabels.length * 45)}
+          minWidth={Math.max(chartWidth, ventasSucursalRows.length * 45)}
           isLoading={loadingVentasAnuales}
           isEmpty={!ventasSucursalRows.length}
-          detailLabels={ventasSucursalLabels}
+          detailLabels={ventasSucursalDetailLabels}
           showValuesOnTop={showVentasSucursalValues}
           hideHint={true}
         />
@@ -1054,6 +1021,18 @@ export default function VentasScreen() {
 
       <ChartCard
         title="Ventas por grupo"
+        headerContent={
+          sucursales.length > 0 ? (
+            <BranchMultiSelect
+              variant="inline"
+              value={selGrupo}
+              onToggle={toggleIn(setSelGrupo)}
+              onSelectAll={selectAllFor(setSelGrupo)}
+              onClear={clearFor(setSelGrupo)}
+              scopeHint="Por grupo"
+            />
+          ) : null
+        }
         data={ventasGrupoData}
         kind="pie"
         colorRgb="245,158,11"

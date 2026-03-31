@@ -41,6 +41,20 @@ const readField = (row: any, key: string): any => {
 };
 
 /**
+ * eSucursales: incluir solo sucursales con "Controla Stock" = 1.
+ * Tras normalizeRow la clave suele ser `controla_stock` (p. ej. columna "Controla Stock").
+ */
+const esSucursalControlaStock = (row: NormalizedRow): boolean => {
+  const v =
+    readField(row, 'controla_stock') ??
+    readField(row, 'controlastock');
+  if (v === undefined || v === null) return false;
+  if (toNumber(v) === 1) return true;
+  const s = String(v).trim().toLowerCase();
+  return s === '1' || s === 's' || s === 'si' || s === 'true' || s === 't';
+};
+
+/**
  * Compara de forma flexible la sucursal de una fila con los filtros seleccionados.
  * Soporta substring matching y es insensible a mayúsculas/minúsculas.
  */
@@ -384,14 +398,18 @@ const getRotacionRows = async (
 router.get('/sucursales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
-    console.log('[ventas-tiempo-real] dbConfig:', dbConfig);
     const rows = await query<Record<string, unknown>>(
       'SELECT * FROM "eSucursales"',
       [],
       dbConfig
     );
-    const normalizedRows = rows.map(normalizeRow);
-    console.log('[dashboard] sucursales rows', rows.length);
+    let normalizedRows = rows.map(normalizeRow).filter(esSucursalControlaStock);
+    if (normalizedRows.length === 0 && rows.length > 0) {
+      console.warn(
+        '[dashboard] eSucursales: ninguna fila con Controla Stock = 1; revisar columna en BD. Lista vacía.',
+      );
+    }
+    console.log('[dashboard] sucursales rows (Controla Stock=1)', normalizedRows.length);
     /** Sin duplicados: id canónico (1 y "01" → "1"); mismo nombre con distinto id se mantiene. */
     type BranchRow = { id: string; nombre: string; prefer: number };
     const collected: BranchRow[] = [];
@@ -1786,6 +1804,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
       );
       sucursalRows.forEach(row => {
         const normalized = normalizeRow(row);
+        if (!esSucursalControlaStock(normalized)) return;
         const id =
           toString(normalized.id_sucursal) ||
           toString(normalized.idsucursal) ||

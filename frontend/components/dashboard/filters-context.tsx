@@ -35,12 +35,51 @@ interface FiltersContextValue {
 const FiltersContext = createContext<FiltersContextValue | undefined>(undefined);
 
 /** Evita duplicados tipo 1 / "01" y alinea chips con la API. */
-const canonicalBranchId = (id: string): string => {
+export const canonicalBranchId = (id: string): string => {
   const t = String(id ?? '').trim();
   if (!t) return '';
   if (/^\d+$/.test(t)) return String(parseInt(t, 10));
   return t.toLowerCase();
 };
+
+/** Misma forma que `requestParams`: `sucursal` (ids) + `sucursalNom` (nombres con `|`). */
+export function branchQueryParamsFromIds(
+  sucursales: BranchOption[],
+  selectedIds: string[],
+): { sucursal: string; sucursalNom: string } {
+  const seleccion = sucursales.filter((s) =>
+    selectedIds.some((id) => canonicalBranchId(id) === canonicalBranchId(s.id)),
+  );
+  return {
+    sucursal: seleccion.map((s) => s.id).join(','),
+    sucursalNom: seleccion.map((s) => s.nombre).join('|'),
+  };
+}
+
+/** Une dos listas de ids sin duplicar por id canónico. */
+export function unionCanonicalIds(a: string[], b: string[]): string[] {
+  const m = new Map<string, string>();
+  for (const id of [...a, ...b]) {
+    const c = canonicalBranchId(id);
+    if (!c) continue;
+    if (!m.has(c)) m.set(c, id);
+  }
+  return [...m.values()];
+}
+
+/** Filtra filas cuyo campo `sucursal` (nombre) coincide con la selección por id. */
+export function isRowSucursalInSelection(
+  rowSucursalName: string,
+  sucursales: BranchOption[],
+  selectedIds: string[],
+): boolean {
+  const n = String(rowSucursalName ?? '').trim().toLowerCase();
+  if (!n) return false;
+  const sel = sucursales.filter((s) =>
+    selectedIds.some((id) => canonicalBranchId(id) === canonicalBranchId(s.id)),
+  );
+  return sel.some((s) => s.nombre.trim().toLowerCase() === n);
+}
 
 const dedupeSucursales = (list: BranchOption[]): BranchOption[] => {
   const m = new Map<string, BranchOption>();

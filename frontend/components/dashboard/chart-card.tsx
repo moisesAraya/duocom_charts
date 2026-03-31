@@ -24,6 +24,9 @@ import {
   type ViewStyle,
 } from "react-native";
 import { BarChart, LineChart, PieChart } from "react-native-chart-kit";
+
+type LineChartProps = React.ComponentProps<typeof LineChart> & { hideLegend?: boolean };
+const LineChartWithLegendToggle = LineChart as React.ComponentType<LineChartProps>;
 import { Text as SvgText } from "react-native-svg";
 import { makeChartConfig } from "./chart-config";
 import { useDashboardFilters } from "./filters-context";
@@ -114,6 +117,9 @@ interface ChartCardProps {
 
   showSucursalPicker?: boolean;
   sucursales?: string[];
+
+  /** Oculta la leyenda nativa del LineChart (p. ej. varias sucursales sin mostrar nombres). */
+  hideLegend?: boolean;
 }
 
 /* =========================
@@ -200,6 +206,7 @@ export const ChartCard = ({
   yAxisInterval,
   showSucursalPicker = false,
   sucursales = [],
+  hideLegend = false,
 }: ChartCardProps) => {
   const anim = useRef(new Animated.Value(0)).current;
   const safeData = data || { labels: [], datasets: [] };
@@ -220,6 +227,11 @@ export const ChartCard = ({
       useNativeDriver: true,
     }).start();
   }, [anim, enterDelay]);
+
+  /** Evita que el modal de detalle muestre valores viejos al cambiar filtros/datos del gráfico. */
+  useEffect(() => {
+    setDetail(null);
+  }, [data]);
 
   const animatedStyle = useMemo(
     () => ({
@@ -531,7 +543,7 @@ export const ChartCard = ({
                       })()}
                     </Pressable>
                   ) : kind === "line" ? (
-                    <LineChart
+                    <LineChartWithLegendToggle
                       data={safeData}
                       width={chartWidth}
                       height={effectiveHeight}
@@ -543,6 +555,7 @@ export const ChartCard = ({
                       formatYLabel={formatYLabel}
                       fromZero
                       withShadow={false}
+                      hideLegend={hideLegend}
                     />
                   ) : pieData.length > 0 ? (
                     <PieChart
@@ -596,7 +609,7 @@ export const ChartCard = ({
                     })()}
                   </Pressable>
                 ) : kind === "line" ? (
-                  <LineChart
+                  <LineChartWithLegendToggle
                     data={safeData}
                     width={width}
                     height={height}
@@ -608,6 +621,7 @@ export const ChartCard = ({
                     formatYLabel={formatYLabel}
                     fromZero
                     withShadow={false}
+                    hideLegend={hideLegend}
                     renderDotContent={
                       showValuesOnTop
                         ? ({ x, y, index, indexData }) => {
