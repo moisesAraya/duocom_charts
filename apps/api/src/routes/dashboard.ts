@@ -366,7 +366,6 @@ router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
     const limit = parseLimit(req.query.limit, 3000);
     const branches = parseSucursalList(req.query.sucursal);
     const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
-    const totals = new Map<string, number>();
 
     const accumulate = (list: NormalizedRow[], useFilter: boolean) => {
       const map = new Map<string, number>();
