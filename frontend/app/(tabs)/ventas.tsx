@@ -1,5 +1,5 @@
 import * as ScreenOrientation from "expo-screen-orientation";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -141,6 +141,8 @@ export default function VentasScreen() {
     null,
   );
 
+  const ventasTiempoRealReqSeq = useRef(0);
+
   /* =========================
      DERIVED PARAMS
   ========================= */
@@ -180,7 +182,7 @@ export default function VentasScreen() {
           .filter((r: any) => r)
           .map((r: any) => ({
             grupo: String(r.grupo || r.Grupo || r.GRUPO || "").trim(),
-            monto: toNumber(r.total), // El backend responde con 'total'
+            monto: toNumber(r.total ?? r.monto ?? r.Total ?? r.Monto),
           })),
       );
     } catch {
@@ -238,6 +240,7 @@ export default function VentasScreen() {
     }
   }, [ventasAnualesParams]);
   const loadVentasTiempoReal = useCallback(async (clickedAt?: Date) => {
+    const seq = ++ventasTiempoRealReqSeq.current;
     setLoadingVentasTiempoReal(true);
     const requestMoment = clickedAt ?? new Date();
     try {
@@ -283,27 +286,32 @@ export default function VentasScreen() {
         console.warn("[ventas] venta-minuto:", snapshotSettled.reason);
       }
 
-      setVentasTiempoReal(rows);
-      setVentasTiempoRealEsMock(false);
+      if (seq !== ventasTiempoRealReqSeq.current) return;
 
       const snapshotRows = (snapshotRes?.data?.data ?? []).filter((r: unknown) =>
         Boolean(r),
       );
 
-      // Si el endpoint horario no existe (deploy viejo) o falló, al menos un punto “ahora” desde venta-minuto
-      if (!rows.length && snapshotRows.length > 0) {
+      let series = rows;
+      // Solo si el horario no devolvió puntos: un punto “ahora” desde venta-minuto (evita pisar serie buena por carrera de requests)
+      if (!series.length && snapshotRows.length > 0) {
         const totalDia = snapshotRows.reduce(
           (acc: number, r: any) => acc + toNumber(r.venta_dia),
           0,
         );
-        setVentasTiempoReal([
+        series = [
           {
             fechaHora: requestMoment.toISOString(),
             totalAcumulado: totalDia,
             sucursal: undefined,
           },
-        ]);
+        ];
       }
+
+      setVentasTiempoReal(series);
+      setVentasTiempoRealEsMock(false);
+
+      if (seq !== ventasTiempoRealReqSeq.current) return;
       const totalVentaDia = snapshotRows.reduce(
         (acc: number, r: any) => acc + toNumber(r.venta_dia),
         0,
@@ -329,6 +337,8 @@ export default function VentasScreen() {
       const minutesSince8 =
         Math.max(0, requestMoment.getHours() - 8) * 60 + requestMoment.getMinutes();
 
+      if (seq !== ventasTiempoRealReqSeq.current) return;
+
       setVentasTiempoRealKpis({
         ticketPromedioDiario:
           totalTicketsDia > 0 ? totalVentaDia / totalTicketsDia : 0,
@@ -342,12 +352,16 @@ export default function VentasScreen() {
           totalTicketsDia > 0 ? Number((minutesSince8 / totalTicketsDia).toFixed(2)) : null,
       });
     } catch {
-      setVentasTiempoReal([]);
-      setVentasTiempoRealEsMock(false);
-      setVentasTiempoRealKpis(null);
+      if (seq === ventasTiempoRealReqSeq.current) {
+        setVentasTiempoReal([]);
+        setVentasTiempoRealEsMock(false);
+        setVentasTiempoRealKpis(null);
+      }
     } finally {
-      setLoadingVentasTiempoReal(false);
-      setUltimaConsultaTiempoReal(new Date());
+      if (seq === ventasTiempoRealReqSeq.current) {
+        setLoadingVentasTiempoReal(false);
+        setUltimaConsultaTiempoReal(new Date());
+      }
     }
   }, [baseRequestParams]);
 

@@ -54,6 +54,16 @@ const isBranchMatch = (rowSucursal: string, filters: string[]): boolean => {
   });
 };
 
+/** Fila de SP normalizada: coincide filtro si el nombre O el id de sucursal calza (ej. filtro "1" vs id_sucursal). */
+const rowMatchesBranches = (row: NormalizedRow, filters: string[]): boolean => {
+  if (!filters.length) return true;
+  const name = getSucursalFromRow(row);
+  const id = toString(
+    row.id_sucursal ?? row.idsucursal ?? row.cod_sucursal ?? row.id_sucursal_catalog,
+  );
+  return isBranchMatch(name, filters) || (Boolean(id) && isBranchMatch(id, filters));
+};
+
 // Middleware para loguear dbConfig en cada request del dashboard
 router.use((req, res, next) => {
   try {
@@ -324,7 +334,7 @@ router.get('/dashboard/clientes-hora', async (req, res, next) => {
 
     for (const row of rows) {
       const sucursal = toString(row.sucursal) || 'N/A';
-      if (!isBranchMatch(sucursal, branches)) continue;
+      if (!rowMatchesBranches(row, branches)) continue;
       const hora = toNumber(row.hora);
       const clientes =
         toNumber(row.cant_docs) || toNumber(row.n_x) || toNumber(row.ticket);
@@ -358,13 +368,23 @@ router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
     const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
     const totals = new Map<string, number>();
 
-    for (const row of rows) {
-      const sucursal = toString(row.sucursal) || 'N/A';
-      if (!isBranchMatch(sucursal, branches)) continue;
-      const medioPago = toString(row.medio_de_pago) || 'Otros';
-      const monto = toNumber(row.t_bruto) || toNumber(row.total);
-      const key = `${sucursal}::${medioPago}`;
-      totals.set(key, (totals.get(key) ?? 0) + monto);
+    const accumulate = (list: NormalizedRow[], useFilter: boolean) => {
+      const map = new Map<string, number>();
+      for (const row of list) {
+        const sucursal = toString(row.sucursal) || 'N/A';
+        if (useFilter && !rowMatchesBranches(row, branches)) continue;
+        const medioPago = toString(row.medio_de_pago) || 'Otros';
+        const monto = toNumber(row.t_bruto) || toNumber(row.total);
+        const key = `${sucursal}::${medioPago}`;
+        map.set(key, (map.get(key) ?? 0) + monto);
+      }
+      return map;
+    };
+
+    let totals = accumulate(rows, true);
+    if (!totals.size && rows.length > 0 && branches.length > 0) {
+      totals = accumulate(rows, false);
+      console.warn('[ventas-medio-pago] filtro sucursal vacío; se devolvió sin filtrar');
     }
 
     const data = Array.from(totals.entries())
@@ -406,7 +426,7 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
 
     const totals = new Map<string, number>();
     for (const row of rows) {
-      if (!isBranchMatch(getSucursalFromRow(row), branches)) continue;
+      if (!rowMatchesBranches(row, branches)) continue;
       const group =
         toString(
           row.grupo ||
@@ -428,9 +448,38 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
       totals.set(group, (totals.get(group) ?? 0) + total);
     }
 
-    const data = Array.from(totals.entries())
+    let data = Array.from(totals.entries())
       .map(([grupo, total]) => ({ grupo, total }))
       .sort((a, b) => b.total - a.total);
+
+    if (!data.length && rows.length > 0 && branches.length > 0) {
+      totals.clear();
+      for (const row of rows) {
+        const group =
+          toString(
+            row.grupo ||
+              row.nombre_grupo ||
+              row.descripcion_grupo ||
+              row.grupo_desc ||
+              row.descripcion_corta ||
+              row.descripcion_art_serv ||
+              row.descripcion_articulo ||
+              row.descripcion ||
+              row.nombre
+          ) || 'Sin grupo';
+        const total =
+          toNumber(row.total) ||
+          toNumber(row.total_venta) ||
+          toNumber(row.venta) ||
+          toNumber(row.monto) ||
+          toNumber(row.importe);
+        totals.set(group, (totals.get(group) ?? 0) + total);
+      }
+      data = Array.from(totals.entries())
+        .map(([grupo, total]) => ({ grupo, total }))
+        .sort((a, b) => b.total - a.total);
+      console.warn('[ventas-por-grupo] filtro de sucursal dejó todo vacío; se devolvió sin filtrar');
+    }
 
     res.json({ success: true, data });
   } catch (error) {
@@ -449,20 +498,46 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
 
 
     for (const row of rows) {
-      const anio = toNumber(row.ano);
+      const anio =
+        toNumber(row.ano) ||
+        toNumber(row.anio) ||
+        toNumber(row.ejercicio) ||
+        toNumber(row.periodo);
       const sucursal = getSucursalFromRow(row);
-      if (!isBranchMatch(sucursal, branches)) continue;
+      if (!rowMatchesBranches(row, branches)) continue;
       const total = getTotalFromRow(row);
       const key = `${sucursal}::${anio}`;
       totals.set(key, (totals.get(key) ?? 0) + total);
     }
 
-    const data = Array.from(totals.entries())
+    let data = Array.from(totals.entries())
       .map(([key, total]) => {
         const [sucursal, anioRaw] = key.split('::');
         return { sucursal, anio: Number(anioRaw), total };
       })
       .sort((a, b) => a.anio - b.anio);
+
+    if (!data.length && rows.length > 0 && branches.length > 0) {
+      totals.clear();
+      for (const row of rows) {
+        const anio =
+          toNumber(row.ano) ||
+          toNumber(row.anio) ||
+          toNumber(row.ejercicio) ||
+          toNumber(row.periodo);
+        const sucursal = getSucursalFromRow(row);
+        const total = getTotalFromRow(row);
+        const key = `${sucursal}::${anio}`;
+        totals.set(key, (totals.get(key) ?? 0) + total);
+      }
+      data = Array.from(totals.entries())
+        .map(([key, total]) => {
+          const [sucursal, anioRaw] = key.split('::');
+          return { sucursal, anio: Number(anioRaw), total };
+        })
+        .sort((a, b) => a.anio - b.anio);
+      console.warn('[ventas-anuales] filtro de sucursal dejó todo vacío; se devolvió sin filtrar');
+    }
 
     res.json({ success: true, data });
   } catch (error) {
@@ -558,33 +633,35 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
       console.log('[VENTA-MINUTO][DEBUG] Primera fila:', rows[0]);
     }
     // Mapeo flexible de columnas (algunos nombres pueden variar)
-    const data = rows.map(row => ({
-      id_sucursal: toNumber(row.id_sucursal),
-      sucursal: toString(row.sucursal),
-      objetivo_mensual: toNumber(row.objetivo_mensual),
-      obj_tickets_mes: toNumber(row.obj_tickets_mes),
-      venta_dia: toNumber(row.venta_dia),
-      ticket_dia: toNumber(row.ticket_dia),
-      ticket_prom_dia: toNumber(row.ticket_prom_dia),
-      venta_acum_mes: toNumber(row.venta_acum_mes),
-      ticket_acum_mes: toNumber(row.ticket_acum_mes),
-      ticket_prom_mes: toNumber(row.ticket_prom_mes),
-      ticket_x_min: toNumber(row.ticket_x_min),
-      ticket_x_hora: toNumber(row.ticket_x_hora),
-      del_objetivo_total: toNumber(row.del_objetivo_total),
-      avance_objetivo: toNumber(row.avance_objetivo),
-      semaforo: toString(row.semaforo),
-      av_ticket_mes: toNumber(row.av_ticket_mes),
-      sem_ticket: toString(row.sem_ticket),
-      proyeccion: toNumber(row.proyeccion),
-      semaforo_proy: toString(row.semaforo_proy),
-      brecha_objetivo: toNumber(row.brecha_objetivo),
-      brecha_proyeccion: toNumber(row.brecha_proyeccion),
-      nuevo_objetivo_diario: toNumber(row.nuevo_objetivo_diario),
-      dias_laborales: toString(row.dias_laborales),
-      periodo_transcurrido: toNumber(row.periodo_transcurrido),
-      ranking: toNumber(row.ranking)
-    })).filter(row => (branches.length ? isBranchMatch(row.sucursal, branches) : true));
+    const data = rows
+      .filter(row => rowMatchesBranches(row, branches))
+      .map(row => ({
+        id_sucursal: toNumber(row.id_sucursal),
+        sucursal: toString(row.sucursal),
+        objetivo_mensual: toNumber(row.objetivo_mensual),
+        obj_tickets_mes: toNumber(row.obj_tickets_mes),
+        venta_dia: toNumber(row.venta_dia),
+        ticket_dia: toNumber(row.ticket_dia),
+        ticket_prom_dia: toNumber(row.ticket_prom_dia),
+        venta_acum_mes: toNumber(row.venta_acum_mes),
+        ticket_acum_mes: toNumber(row.ticket_acum_mes),
+        ticket_prom_mes: toNumber(row.ticket_prom_mes),
+        ticket_x_min: toNumber(row.ticket_x_min),
+        ticket_x_hora: toNumber(row.ticket_x_hora),
+        del_objetivo_total: toNumber(row.del_objetivo_total),
+        avance_objetivo: toNumber(row.avance_objetivo),
+        semaforo: toString(row.semaforo),
+        av_ticket_mes: toNumber(row.av_ticket_mes),
+        sem_ticket: toString(row.sem_ticket),
+        proyeccion: toNumber(row.proyeccion),
+        semaforo_proy: toString(row.semaforo_proy),
+        brecha_objetivo: toNumber(row.brecha_objetivo),
+        brecha_proyeccion: toNumber(row.brecha_proyeccion),
+        nuevo_objetivo_diario: toNumber(row.nuevo_objetivo_diario),
+        dias_laborales: toString(row.dias_laborales),
+        periodo_transcurrido: toNumber(row.periodo_transcurrido),
+        ranking: toNumber(row.ranking),
+      }));
 
     console.log('[VENTA-MINUTO][DEBUG] FIN endpoint /dashboard/venta-minuto, data.length:', data.length);
     res.json({ success: true, data });
@@ -666,7 +743,7 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
   }
 });
 
-// Ventas acumuladas por hora (08:00 -> momento de la consulta) + punto exacto del click
+// Ventas acumuladas por hora (08:00 → hora actual): serie alineada a _PvtVentaHoraria (+ cierre con _Web_VtaAlMin si hace falta)
 router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
@@ -679,55 +756,173 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       return;
     }
 
-    // Importante: calculamos en UTC (evita que el timezone del servidor altere la hora).
-    // JS tzOffsetMin: minutos desde UTC para el timezone local del cliente.
-    // En términos simples: local = utc - offset.
     const tzOffsetMinRaw = Number(req.query.tzOffsetMin ?? 0);
     const tzOffsetMin = Number.isFinite(tzOffsetMinRaw) ? tzOffsetMinRaw : 0;
 
-    // Convertimos "at" (UTC) a "hora local del cliente" (representada como valores UTC).
     const endLocalAsUtc = new Date(at.getTime() - tzOffsetMin * 60_000);
     const startLocalAsUtc = new Date(endLocalAsUtc.getTime());
     startLocalAsUtc.setUTCHours(8, 0, 0, 0);
 
-    // Volvemos a UTC para pasar al SP (timestamp absoluto).
     const start = new Date(startLocalAsUtc.getTime() + tzOffsetMin * 60_000);
     const end = new Date(endLocalAsUtc.getTime() + tzOffsetMin * 60_000);
 
-    const limit = parseLimit(req.query.limit, 240);
-
-    // Para que calce con la app (y DBEaver), usamos el mismo SP de snapshot acumulado del día:
-    // "_Web_VtaAlMin"(timestamp). Lo consultamos en cada hora y también en el minuto exacto.
+    const limit = parseLimit(req.query.limit, 3000);
     const startHour = 8;
-    const endHour = endLocalAsUtc.getUTCHours();
+    const endHour = Math.max(startHour, endLocalAsUtc.getUTCHours());
 
-    const pointsLocalAsUtc: Date[] = [];
-    for (let h = startHour; h <= endHour; h += 1) {
-      const d = new Date(endLocalAsUtc.getTime());
-      d.setUTCHours(h, 0, 0, 0);
-      pointsLocalAsUtc.push(d);
-    }
-    // Punto final exacto
-    pointsLocalAsUtc.push(new Date(endLocalAsUtc.getTime()));
+    type Pt = {
+      fechaHora: string;
+      hora: number;
+      totalAcumulado: number;
+      ticketsHora: number;
+      ticketsAcumulados: number;
+    };
 
-    const pointsUtc = pointsLocalAsUtc.map(
-      (dLocalAsUtc) => new Date(dLocalAsUtc.getTime() + tzOffsetMin * 60_000),
-    );
-
-    // Serie (no paralelo): evita saturar el pool de Firebird y un fallo no tumba todo el endpoint.
-    const snapshots: NormalizedRow[][] = [];
-    for (let i = 0; i < pointsUtc.length; i += 1) {
-      const ts = pointsUtc[i];
-      try {
-        const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [ts], { limit });
-        snapshots.push(rows ?? []);
-      } catch (err) {
-        console.error('[ventas-tiempo-real-hora][WARN] _Web_VtaAlMin falló en punto', i, {
-          ts: ts.toISOString(),
-          message: err instanceof Error ? err.message : String(err),
-        });
-        snapshots.push([]);
+    const buildFromWebSnapshots = async (): Promise<Pt[]> => {
+      const pointsLocalAsUtc: Date[] = [];
+      for (let h = startHour; h <= endHour; h += 1) {
+        const d = new Date(endLocalAsUtc.getTime());
+        d.setUTCHours(h, 0, 0, 0);
+        pointsLocalAsUtc.push(d);
       }
+      pointsLocalAsUtc.push(new Date(endLocalAsUtc.getTime()));
+
+      const pointsUtc = pointsLocalAsUtc.map(
+        (dLocalAsUtc) => new Date(dLocalAsUtc.getTime() + tzOffsetMin * 60_000),
+      );
+
+      const snapshots: NormalizedRow[][] = [];
+      for (let i = 0; i < pointsUtc.length; i += 1) {
+        const ts = pointsUtc[i];
+        try {
+          const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [ts], { limit });
+          snapshots.push(rows ?? []);
+        } catch (err) {
+          console.error('[ventas-tiempo-real-hora][WARN] _Web_VtaAlMin falló en punto', i, {
+            ts: ts.toISOString(),
+            message: err instanceof Error ? err.message : String(err),
+          });
+          snapshots.push([]);
+        }
+      }
+
+      const out: Pt[] = [];
+      let prevTickets = 0;
+      snapshots.forEach((rows, idx) => {
+        const tsUtc = pointsUtc[idx];
+        const tsLocalAsUtc = pointsLocalAsUtc[idx];
+        const totals = (rows ?? []).reduce(
+          (acc, row) => {
+            if (!rowMatchesBranches(row, branches)) return acc;
+            return {
+              ventaDia: acc.ventaDia + toNumber(row.venta_dia),
+              ticketsDia: acc.ticketsDia + toNumber(row.ticket_dia),
+            };
+          },
+          { ventaDia: 0, ticketsDia: 0 },
+        );
+        const ticketsHora = Math.max(0, totals.ticketsDia - prevTickets);
+        prevTickets = totals.ticketsDia;
+        out.push({
+          fechaHora: tsUtc.toISOString(),
+          hora: tsLocalAsUtc.getUTCHours(),
+          totalAcumulado: totals.ventaDia,
+          ticketsHora,
+          ticketsAcumulados: totals.ticketsDia,
+        });
+      });
+      return out;
+    };
+
+    let pvtRows: NormalizedRow[] = [];
+    try {
+      pvtRows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
+    } catch (err) {
+      console.error('[ventas-tiempo-real-hora] _PvtVentaHoraria falló, usando _Web_VtaAlMin', {
+        message: err instanceof Error ? err.message : String(err),
+      });
+      pvtRows = [];
+    }
+
+    const fillByHour = (rows: NormalizedRow[], useBranchFilter: boolean) => {
+      const map = new Map<number, { monto: number; tickets: number }>();
+      for (const row of rows) {
+        if (useBranchFilter && !rowMatchesBranches(row, branches)) continue;
+        const h = Math.trunc(toNumber(row.hora));
+        if (!Number.isFinite(h)) continue;
+        const monto =
+          toNumber(row.t_bruto) ||
+          toNumber(readField(row, 't_bruto')) ||
+          getTotalFromRow(row);
+        const tickets =
+          toNumber(row.cant_docs) || toNumber(readField(row, 'cant_docs'));
+        const slot = map.get(h) ?? { monto: 0, tickets: 0 };
+        slot.monto += monto;
+        slot.tickets += tickets;
+        map.set(h, slot);
+      }
+      return map;
+    };
+
+    let byHour = fillByHour(pvtRows, true);
+    if (pvtRows.length > 0 && byHour.size === 0 && branches.length > 0) {
+      byHour = fillByHour(pvtRows, false);
+      console.warn(
+        '[ventas-tiempo-real-hora] filtro sucursal dejó Pvt vacío; serie sin filtrar por sucursal',
+      );
+    }
+
+    let data: Pt[] = [];
+    let cumMonto = 0;
+    let cumTickets = 0;
+
+    for (let h = startHour; h <= endHour; h += 1) {
+      const slot = byHour.get(h) ?? { monto: 0, tickets: 0 };
+      cumMonto += slot.monto;
+      cumTickets += slot.tickets;
+      const tsLocalAsUtc = new Date(endLocalAsUtc.getTime());
+      tsLocalAsUtc.setUTCHours(h, 0, 0, 0);
+      const tsUtc = new Date(tsLocalAsUtc.getTime() + tzOffsetMin * 60_000);
+      data.push({
+        fechaHora: tsUtc.toISOString(),
+        hora: h,
+        totalAcumulado: cumMonto,
+        ticketsHora: slot.tickets,
+        ticketsAcumulados: cumTickets,
+      });
+    }
+
+    const hasSubHourTail =
+      endLocalAsUtc.getUTCMinutes() !== 0 ||
+      endLocalAsUtc.getUTCSeconds() !== 0 ||
+      endLocalAsUtc.getUTCMilliseconds() !== 0;
+
+    if (data.length && hasSubHourTail) {
+      let webVenta = cumMonto;
+      try {
+        const webRows = await runProcedure(dbConfig, '_Web_VtaAlMin', [end], { limit });
+        webVenta = (webRows ?? []).reduce((acc, row) => {
+          if (!rowMatchesBranches(row, branches)) return acc;
+          return acc + toNumber(row.venta_dia);
+        }, 0);
+      } catch {
+        /* mantener acumulado Pvt */
+      }
+      const lastIso = end.toISOString();
+      if (data[data.length - 1]?.fechaHora !== lastIso) {
+        data.push({
+          fechaHora: lastIso,
+          hora: endLocalAsUtc.getUTCHours(),
+          totalAcumulado: webVenta,
+          ticketsHora: 0,
+          ticketsAcumulados: cumTickets,
+        });
+      }
+    }
+
+    if (pvtRows.length === 0) {
+      data = await buildFromWebSnapshots();
+      console.log('[ventas-tiempo-real-hora] sin Pvt, fallback _Web_VtaAlMin, puntos:', data.length);
     }
 
     console.log('[ventas-tiempo-real-hora][DEBUG] input', {
@@ -736,58 +931,9 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       start: start.toISOString(),
       end: end.toISOString(),
       branches,
-      pointCount: pointsUtc.length,
-      snapshotSizes: snapshots.map((s) => s.length),
-    });
-    console.log(
-      '[ventas-tiempo-real-hora][DEBUG] snapshotSample',
-      (snapshots[0] ?? []).slice(0, 3),
-    );
-
-    const data: Array<{
-      fechaHora: string;
-      hora: number;
-      totalAcumulado: number;
-      ticketsHora: number;
-      ticketsAcumulados: number;
-    }> = [];
-    let prevTickets = 0;
-    snapshots.forEach((rows, idx) => {
-      const tsUtc = pointsUtc[idx];
-      const tsLocalAsUtc = pointsLocalAsUtc[idx];
-
-      const totals = (rows ?? []).reduce(
-        (acc, row) => {
-          const sucursalNombre = toString(row.sucursal);
-          const sucursalId = toString(row.id_sucursal);
-          if (
-            branches.length &&
-            !(
-              isBranchMatch(sucursalNombre, branches) ||
-              isBranchMatch(sucursalId, branches)
-            )
-          ) {
-            return acc;
-          }
-
-          return {
-            ventaDia: acc.ventaDia + toNumber(row.venta_dia),
-            ticketsDia: acc.ticketsDia + toNumber(row.ticket_dia),
-          };
-        },
-        { ventaDia: 0, ticketsDia: 0 },
-      );
-
-      const ticketsHora = Math.max(0, totals.ticketsDia - prevTickets);
-      prevTickets = totals.ticketsDia;
-
-      data.push({
-        fechaHora: tsUtc.toISOString(),
-        hora: tsLocalAsUtc.getUTCHours(),
-        totalAcumulado: totals.ventaDia,
-        ticketsHora,
-        ticketsAcumulados: totals.ticketsDia,
-      });
+      pvtRowCount: pvtRows.length,
+      horasAgg: byHour.size,
+      outPoints: data.length,
     });
 
     res.json({ success: true, data, meta: { start: start.toISOString(), end: end.toISOString() } });
