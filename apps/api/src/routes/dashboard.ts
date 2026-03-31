@@ -714,9 +714,21 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       (dLocalAsUtc) => new Date(dLocalAsUtc.getTime() + tzOffsetMin * 60_000),
     );
 
-    const snapshots = await Promise.all(
-      pointsUtc.map((ts) => runProcedure(dbConfig, '_Web_VtaAlMin', [ts], { limit })),
-    );
+    // Serie (no paralelo): evita saturar el pool de Firebird y un fallo no tumba todo el endpoint.
+    const snapshots: NormalizedRow[][] = [];
+    for (let i = 0; i < pointsUtc.length; i += 1) {
+      const ts = pointsUtc[i];
+      try {
+        const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [ts], { limit });
+        snapshots.push(rows ?? []);
+      } catch (err) {
+        console.error('[ventas-tiempo-real-hora][WARN] _Web_VtaAlMin falló en punto', i, {
+          ts: ts.toISOString(),
+          message: err instanceof Error ? err.message : String(err),
+        });
+        snapshots.push([]);
+      }
+    }
 
     console.log('[ventas-tiempo-real-hora][DEBUG] input', {
       at: at.toISOString(),

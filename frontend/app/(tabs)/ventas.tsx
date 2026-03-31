@@ -241,34 +241,69 @@ export default function VentasScreen() {
     setLoadingVentasTiempoReal(true);
     const requestMoment = clickedAt ?? new Date();
     try {
-      const [hourlyRes, snapshotRes] = await Promise.all([
-        api.get("/api/dashboard/ventas-tiempo-real-hora", {
-          params: {
-            ...baseRequestParams,
-            at: requestMoment.toISOString(),
-            tzOffsetMin: requestMoment.getTimezoneOffset(),
-            limit: 3000,
-          },
-        }),
+      const hourlyParams = {
+        ...baseRequestParams,
+        at: requestMoment.toISOString(),
+        tzOffsetMin: requestMoment.getTimezoneOffset(),
+        limit: 3000,
+      };
+
+      const [hourlySettled, snapshotSettled] = await Promise.allSettled([
+        api.get("/api/dashboard/ventas-tiempo-real-hora", { params: hourlyParams }),
         api.get("/api/dashboard/venta-minuto", {
           params: { ...baseRequestParams, limit: 240 },
         }),
       ]);
 
-      const rows: VentaTiempoRealRow[] = (hourlyRes.data?.data ?? [])
-        .map((row: any) => ({
-          fechaHora: String(row.fechaHora ?? row.fechahora ?? ""),
-          totalAcumulado: toNumber(
-            row.totalAcumulado ?? row.totalacumulado ?? row.total,
-          ),
-          sucursal: row.sucursal,
-        }))
-        .filter((r: VentaTiempoRealRow) => r.fechaHora && Number.isFinite(r.totalAcumulado));
+      let rows: VentaTiempoRealRow[] = [];
+      if (hourlySettled.status === "fulfilled") {
+        const payload = hourlySettled.value.data;
+        rows = (payload?.data ?? [])
+          .map((row: any) => ({
+            fechaHora: String(row.fechaHora ?? row.fechahora ?? ""),
+            totalAcumulado: toNumber(
+              row.totalAcumulado ?? row.totalacumulado ?? row.total,
+            ),
+            sucursal: row.sucursal,
+          }))
+          .filter(
+            (r: VentaTiempoRealRow) =>
+              r.fechaHora && Number.isFinite(r.totalAcumulado),
+          );
+      } else {
+        console.warn(
+          "[ventas] ventas-tiempo-real-hora:",
+          hourlySettled.reason,
+        );
+      }
+
+      const snapshotRes =
+        snapshotSettled.status === "fulfilled" ? snapshotSettled.value : null;
+      if (snapshotSettled.status === "rejected") {
+        console.warn("[ventas] venta-minuto:", snapshotSettled.reason);
+      }
 
       setVentasTiempoReal(rows);
       setVentasTiempoRealEsMock(false);
 
-      const snapshotRows = (snapshotRes.data?.data ?? []).filter((r: unknown) => Boolean(r));
+      const snapshotRows = (snapshotRes?.data?.data ?? []).filter((r: unknown) =>
+        Boolean(r),
+      );
+
+      // Si el endpoint horario no existe (deploy viejo) o falló, al menos un punto “ahora” desde venta-minuto
+      if (!rows.length && snapshotRows.length > 0) {
+        const totalDia = snapshotRows.reduce(
+          (acc: number, r: any) => acc + toNumber(r.venta_dia),
+          0,
+        );
+        setVentasTiempoReal([
+          {
+            fechaHora: requestMoment.toISOString(),
+            totalAcumulado: totalDia,
+            sucursal: undefined,
+          },
+        ]);
+      }
       const totalVentaDia = snapshotRows.reduce(
         (acc: number, r: any) => acc + toNumber(r.venta_dia),
         0,
