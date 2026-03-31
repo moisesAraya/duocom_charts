@@ -679,42 +679,83 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       return;
     }
 
-    const start = new Date(at);
-    start.setHours(8, 0, 0, 0);
+    // Usar offset del cliente para respetar su reloj local (evita desfases UTC/servidor).
+    const tzOffsetMinRaw = Number(req.query.tzOffsetMin ?? 0);
+    const tzOffsetMin = Number.isFinite(tzOffsetMinRaw) ? tzOffsetMinRaw : 0;
 
-    const end = new Date(at);
+    const atLocal = new Date(at.getTime() - tzOffsetMin * 60_000);
+    const startLocal = new Date(atLocal);
+    startLocal.setHours(8, 0, 0, 0);
+    const endLocal = new Date(atLocal);
+
+    const start = new Date(startLocal.getTime() + tzOffsetMin * 60_000);
+    const end = new Date(endLocal.getTime() + tzOffsetMin * 60_000);
 
     const limit = parseLimit(req.query.limit, 3000);
     const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
 
-    // Agrupar total por hora (sumando sucursales), luego convertir a acumulado
-    const hourlyTotals = new Map<number, number>();
+    // Agrupar total por hora (sumando sucursales), luego convertir a acumulado.
+    const hourlyTotals = new Map<number, { monto: number; tickets: number }>();
     for (const row of rows) {
-      const sucursal = toString(row.sucursal) || 'N/A';
+      const sucursal =
+        toString(readField(row, 'sucursal')) ||
+        toString(readField(row, 'Sucursal')) ||
+        'N/A';
       if (branches.length && !isBranchMatch(sucursal, branches)) continue;
 
-      const hora = Math.trunc(toNumber(row.hora));
+      const hora = Math.trunc(
+        toNumber(readField(row, 'hora') || readField(row, 'Hora')),
+      );
       if (!Number.isFinite(hora) || hora < 0 || hora > 23) continue;
 
       const monto =
-        toNumber(row.t_bruto) ||
-        toNumber(row.total) ||
-        toNumber(row.monto) ||
-        toNumber(row.venta);
+        toNumber(readField(row, 'T/Bruto')) ||
+        toNumber(readField(row, 't_bruto')) ||
+        toNumber(readField(row, 'total')) ||
+        toNumber(readField(row, 'monto')) ||
+        toNumber(readField(row, 'venta'));
 
-      hourlyTotals.set(hora, (hourlyTotals.get(hora) ?? 0) + (Number.isFinite(monto) ? monto : 0));
+      const tickets =
+        toNumber(readField(row, 'Cant/Docs')) ||
+        toNumber(readField(row, 'cant_docs')) ||
+        toNumber(readField(row, 'Ticket')) ||
+        toNumber(readField(row, 'ticket'));
+
+      const prev = hourlyTotals.get(hora) ?? { monto: 0, tickets: 0 };
+      hourlyTotals.set(hora, {
+        monto: prev.monto + (Number.isFinite(monto) ? monto : 0),
+        tickets: prev.tickets + (Number.isFinite(tickets) ? tickets : 0),
+      });
     }
 
     const startHour = 8;
-    const endHour = end.getHours();
+    const endHour = endLocal.getHours();
     let acumulado = 0;
-    const data: Array<{ fechaHora: string; hora: number; totalAcumulado: number }> = [];
+    let ticketsAcumulados = 0;
+    const data: Array<{
+      fechaHora: string;
+      hora: number;
+      totalAcumulado: number;
+      ticketsHora: number;
+      ticketsAcumulados: number;
+    }> = [];
 
     for (let h = startHour; h <= endHour; h += 1) {
-      acumulado += hourlyTotals.get(h) ?? 0;
-      const d = new Date(end);
-      d.setHours(h, 0, 0, 0);
-      data.push({ fechaHora: d.toISOString(), hora: h, totalAcumulado: acumulado });
+      const slot = hourlyTotals.get(h) ?? { monto: 0, tickets: 0 };
+      acumulado += slot.monto;
+      ticketsAcumulados += slot.tickets;
+
+      const dLocal = new Date(endLocal);
+      dLocal.setHours(h, 0, 0, 0);
+      const d = new Date(dLocal.getTime() + tzOffsetMin * 60_000);
+
+      data.push({
+        fechaHora: d.toISOString(),
+        hora: h,
+        totalAcumulado: acumulado,
+        ticketsHora: slot.tickets,
+        ticketsAcumulados,
+      });
     }
 
     // Punto final exacto del click (mantiene el acumulado del último punto horario)
@@ -723,6 +764,8 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
         fechaHora: end.toISOString(),
         hora: end.getHours(),
         totalAcumulado: data[data.length - 1].totalAcumulado,
+        ticketsHora: data[data.length - 1].ticketsHora,
+        ticketsAcumulados: data[data.length - 1].ticketsAcumulados,
       });
     }
 

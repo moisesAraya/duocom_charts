@@ -246,6 +246,7 @@ export default function VentasScreen() {
           params: {
             ...baseRequestParams,
             at: requestMoment.toISOString(),
+            tzOffsetMin: requestMoment.getTimezoneOffset(),
             limit: 3000,
           },
         }),
@@ -680,10 +681,10 @@ export default function VentasScreen() {
         width={chartWidth}
         height={260}
         xLabel="Hora"
-        yLabel="Acumulado"
-        formatValue={formatCompact}
+        yLabel="Acumulado ($)"
+        formatValue={(v) => `$${formatCompact(v)}`}
         formatDetailValue={formatCurrency}
-        formatAxisValue={formatCompact}
+        formatAxisValue={(v) => `$${formatCompact(v)}`}
         scrollable
         minWidth={Math.max(chartWidth, ventasTiempoReal.length * 42)}
         isLoading={loadingVentasTiempoReal}
@@ -755,10 +756,10 @@ export default function VentasScreen() {
           width={chartWidth}
           height={280}
           xLabel="Años"
-          yLabel="Ventas (M)"
-          formatValue={(v) => `${(v / 1_000_000).toFixed(0)}M`}
-          formatDetailValue={(v) => `${(v / 1_000_000).toFixed(2)}M`}
-          formatAxisValue={(v) => `${(v / 1_000_000).toFixed(0)}M`}
+          yLabel="Ventas ($M)"
+          formatValue={(v) => `$${(v / 1_000_000).toFixed(0)}M`}
+          formatDetailValue={(v) => `$${(v / 1_000_000).toFixed(2)}M`}
+          formatAxisValue={(v) => `$${(v / 1_000_000).toFixed(0)}M`}
           yAxisInterval={200_000_000}
           scrollable={false}
           minWidth={ventasAnualesYears.length * 60}
@@ -827,10 +828,10 @@ export default function VentasScreen() {
           width={chartWidth}
           height={300}
           xLabel="Sucursales"
-          yLabel="Ventas (M)"
+          yLabel="Ventas ($M)"
           yAxisSuffix="M"
-          formatValue={formatCompact}
-          formatDetailValue={(v) => `${v.toFixed(0)}M`}
+          formatValue={(v) => `$${formatCompact(v)}`}
+          formatDetailValue={(v) => `$${v.toFixed(0)}M`}
           yAxisInterval={ventasSucursalYAxisStep}
           scrollable={false}
           minWidth={Math.max(chartWidth, ventasSucursalLabels.length * 45)}
@@ -1616,14 +1617,14 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
         width={chartWidth}
         height={400}
         xLabel="Días del mes"
-        yLabel="Ventas"
+        yLabel="Ventas ($)"
         isLoading={loading}
         isEmpty={chartData.datasets.length === 0}
         hideHint
         scrollable
         minWidth={xMinWidth}
         yAxisInterval={yAxisStepM}
-        formatAxisValue={formatCompact}
+        formatAxisValue={(v) => `$${formatCompact(v)}`}
         formatDetailValue={formatCurrency}
         dotRadius={4}
       />
