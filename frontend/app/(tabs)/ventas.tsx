@@ -111,21 +111,6 @@ const niceStep = (value: number) => {
   return niceFraction * Math.pow(10, exponent);
 };
 
-const buildMockVentasTiempoReal = (): VentaTiempoRealRow[] => {
-  const now = new Date();
-  let acumulado = 0;
-  return Array.from({ length: 24 }, (_, idx) => {
-    const d = new Date(now);
-    d.setHours(idx, 0, 0, 0);
-    acumulado += Math.round(Math.random() * 220_000 + 120_000);
-    return {
-      fechaHora: d.toISOString(),
-      totalAcumulado: acumulado,
-      sucursal: "General",
-    };
-  });
-};
-
 export default function VentasScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(280, width - 40);
@@ -256,26 +241,70 @@ export default function VentasScreen() {
     setLoadingVentasTiempoReal(true);
     const requestMoment = clickedAt ?? new Date();
     try {
-      const res = await api.get("/api/dashboard/ventas-tiempo-real-hora", {
-        params: {
-          ...baseRequestParams,
-          at: requestMoment.toISOString(),
-          limit: 3000,
-        },
-      });
+      const [hourlyRes, snapshotRes] = await Promise.all([
+        api.get("/api/dashboard/ventas-tiempo-real-hora", {
+          params: {
+            ...baseRequestParams,
+            at: requestMoment.toISOString(),
+            limit: 3000,
+          },
+        }),
+        api.get("/api/dashboard/venta-minuto", {
+          params: { ...baseRequestParams, limit: 240 },
+        }),
+      ]);
 
-      const rows: VentaTiempoRealRow[] = (res.data?.data ?? [])
+      const rows: VentaTiempoRealRow[] = (hourlyRes.data?.data ?? [])
         .map((row: any) => ({
           fechaHora: String(row.fechaHora ?? row.fechahora ?? ""),
-          totalAcumulado: toNumber(row.totalAcumulado ?? row.totalacumulado ?? row.total),
+          totalAcumulado: toNumber(
+            row.totalAcumulado ?? row.totalacumulado ?? row.total,
+          ),
           sucursal: row.sucursal,
         }))
-        .filter((r) => r.fechaHora && Number.isFinite(r.totalAcumulado));
+        .filter((r: VentaTiempoRealRow) => r.fechaHora && Number.isFinite(r.totalAcumulado));
 
       setVentasTiempoReal(rows);
       setVentasTiempoRealEsMock(false);
-      // Si quieres mostrar KPIs, puedes calcularlos aquí a partir de los datos reales
-      setVentasTiempoRealKpis(null); // O calcula KPIs si tienes los datos
+
+      const snapshotRows = (snapshotRes.data?.data ?? []).filter((r: unknown) => Boolean(r));
+      const totalVentaDia = snapshotRows.reduce(
+        (acc: number, r: any) => acc + toNumber(r.venta_dia),
+        0,
+      );
+      const totalVentaMes = snapshotRows.reduce(
+        (acc: number, r: any) => acc + toNumber(r.venta_acum_mes),
+        0,
+      );
+      const totalTicketsDia = snapshotRows.reduce(
+        (acc: number, r: any) => acc + toNumber(r.ticket_dia),
+        0,
+      );
+      const totalTicketsMes = snapshotRows.reduce(
+        (acc: number, r: any) => acc + toNumber(r.ticket_acum_mes),
+        0,
+      );
+      const maxDiasLaborales = snapshotRows.reduce((acc: number, r: any) => {
+        const raw = String(r.dias_laborales ?? "");
+        const [transcurridosRaw] = raw.split("/");
+        const transcurridos = toNumber(transcurridosRaw);
+        return Math.max(acc, transcurridos);
+      }, 0);
+      const minutesSince8 =
+        Math.max(0, requestMoment.getHours() - 8) * 60 + requestMoment.getMinutes();
+
+      setVentasTiempoRealKpis({
+        ticketPromedioDiario:
+          totalTicketsDia > 0 ? totalVentaDia / totalTicketsDia : 0,
+        ticketPromedioMensual:
+          totalTicketsMes > 0 ? totalVentaMes / totalTicketsMes : 0,
+        cantidadTicketsDia: totalTicketsDia,
+        cantidadTicketsMes: totalTicketsMes,
+        promedioTicketsDiarioMes:
+          maxDiasLaborales > 0 ? totalTicketsMes / maxDiasLaborales : 0,
+        frecuenciaVentaMinutos:
+          totalTicketsDia > 0 ? Number((minutesSince8 / totalTicketsDia).toFixed(2)) : null,
+      });
     } catch {
       setVentasTiempoReal([]);
       setVentasTiempoRealEsMock(false);
@@ -297,6 +326,11 @@ export default function VentasScreen() {
   useEffect(() => {
     void loadVentasAnuales();
   }, [loadVentasAnuales]);
+
+  useEffect(() => {
+    void loadVentasTiempoReal(new Date());
+  }, [loadVentasTiempoReal]);
+
   const loadAllData = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -322,7 +356,7 @@ export default function VentasScreen() {
 
   const ventasTiempoRealData = useMemo(
     () => ({
-      labels: sparsifyLabels(ventasTiempoRealLabels, 6),
+      labels: ventasTiempoRealLabels,
       datasets: [
         {
           data: ventasTiempoReal.map((row) => row.totalAcumulado),
