@@ -694,8 +694,29 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
     const start = new Date(startLocalAsUtc.getTime() + tzOffsetMin * 60_000);
     const end = new Date(endLocalAsUtc.getTime() + tzOffsetMin * 60_000);
 
-    const limit = parseLimit(req.query.limit, 3000);
-    const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
+    const limit = parseLimit(req.query.limit, 240);
+
+    // Para que calce con la app (y DBEaver), usamos el mismo SP de snapshot acumulado del día:
+    // "_Web_VtaAlMin"(timestamp). Lo consultamos en cada hora y también en el minuto exacto.
+    const startHour = 8;
+    const endHour = endLocalAsUtc.getUTCHours();
+
+    const pointsLocalAsUtc: Date[] = [];
+    for (let h = startHour; h <= endHour; h += 1) {
+      const d = new Date(endLocalAsUtc.getTime());
+      d.setUTCHours(h, 0, 0, 0);
+      pointsLocalAsUtc.push(d);
+    }
+    // Punto final exacto
+    pointsLocalAsUtc.push(new Date(endLocalAsUtc.getTime()));
+
+    const pointsUtc = pointsLocalAsUtc.map(
+      (dLocalAsUtc) => new Date(dLocalAsUtc.getTime() + tzOffsetMin * 60_000),
+    );
+
+    const snapshots = await Promise.all(
+      pointsUtc.map((ts) => runProcedure(dbConfig, '_Web_VtaAlMin', [ts], { limit })),
+    );
 
     console.log('[ventas-tiempo-real-hora][DEBUG] input', {
       at: at.toISOString(),
@@ -703,63 +724,14 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       start: start.toISOString(),
       end: end.toISOString(),
       branches,
-      rowsCount: rows.length,
+      pointCount: pointsUtc.length,
+      snapshotSizes: snapshots.map((s) => s.length),
     });
-    console.log('[ventas-tiempo-real-hora][DEBUG] sampleRow', rows.slice(0, 5).map(r => ({
-      hora: r.hora,
-      t_bruto: r.t_bruto,
-      cant_docs: r.cant_docs,
-      sucursal: r.sucursal,
-      id_sucursal: r.id_sucursal ?? r.idsucursal,
-      keys: Object.keys(r).slice(0, 12),
-    })));
+    console.log(
+      '[ventas-tiempo-real-hora][DEBUG] snapshotSample',
+      (snapshots[0] ?? []).slice(0, 3),
+    );
 
-    // Agrupar total por hora (sumando sucursales), luego convertir a acumulado.
-    const hourlyTotals = new Map<number, { monto: number; tickets: number }>();
-    for (const row of rows) {
-      // runProcedure normaliza claves (normalizeRow), por eso usamos claves ya "limpias".
-      const sucursalNombre =
-        toString(row.sucursal ?? row.descripcion_sucursal ?? row.nombre_sucursal ?? '');
-      const sucursalId =
-        toString(row.id_sucursal ?? row.idsucursal ?? row.id ?? row.codigo ?? '');
-
-      if (
-        branches.length &&
-        !(
-          isBranchMatch(sucursalNombre, branches) ||
-          isBranchMatch(sucursalId, branches)
-        )
-      ) {
-        continue;
-      }
-
-      const horaRaw = toNumber(row.hora ?? row.HORA ?? row.Hora);
-      const hora = Math.trunc(horaRaw);
-      if (!Number.isFinite(hora) || hora < 0 || hora > 23) continue;
-
-      const monto =
-        toNumber(row.t_bruto) ||
-        toNumber(row.total) ||
-        toNumber(row.monto) ||
-        toNumber(row.venta);
-
-      const tickets =
-        toNumber(row.cant_docs) ||
-        toNumber(row.cant_docs_total) ||
-        toNumber(row.ticket) ||
-        toNumber(row.cantdocs);
-
-      const prev = hourlyTotals.get(hora) ?? { monto: 0, tickets: 0 };
-      hourlyTotals.set(hora, {
-        monto: prev.monto + (Number.isFinite(monto) ? monto : 0),
-        tickets: prev.tickets + (Number.isFinite(tickets) ? tickets : 0),
-      });
-    }
-
-    const startHour = 8;
-    const endHour = endLocalAsUtc.getUTCHours();
-    let acumulado = 0;
-    let ticketsAcumulados = 0;
     const data: Array<{
       fechaHora: string;
       hora: number;
@@ -767,35 +739,44 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       ticketsHora: number;
       ticketsAcumulados: number;
     }> = [];
+    let prevTickets = 0;
+    snapshots.forEach((rows, idx) => {
+      const tsUtc = pointsUtc[idx];
+      const tsLocalAsUtc = pointsLocalAsUtc[idx];
 
-    for (let h = startHour; h <= endHour; h += 1) {
-      const slot = hourlyTotals.get(h) ?? { monto: 0, tickets: 0 };
-      acumulado += slot.monto;
-      ticketsAcumulados += slot.tickets;
+      const totals = (rows ?? []).reduce(
+        (acc, row) => {
+          const sucursalNombre = toString(row.sucursal);
+          const sucursalId = toString(row.id_sucursal);
+          if (
+            branches.length &&
+            !(
+              isBranchMatch(sucursalNombre, branches) ||
+              isBranchMatch(sucursalId, branches)
+            )
+          ) {
+            return acc;
+          }
 
-      const slotLocalAsUtc = new Date(endLocalAsUtc.getTime());
-      slotLocalAsUtc.setUTCHours(h, 0, 0, 0);
-      const slotUtc = new Date(slotLocalAsUtc.getTime() + tzOffsetMin * 60_000);
+          return {
+            ventaDia: acc.ventaDia + toNumber(row.venta_dia),
+            ticketsDia: acc.ticketsDia + toNumber(row.ticket_dia),
+          };
+        },
+        { ventaDia: 0, ticketsDia: 0 },
+      );
+
+      const ticketsHora = Math.max(0, totals.ticketsDia - prevTickets);
+      prevTickets = totals.ticketsDia;
 
       data.push({
-        fechaHora: slotUtc.toISOString(),
-        hora: h,
-        totalAcumulado: acumulado,
-        ticketsHora: slot.tickets,
-        ticketsAcumulados,
+        fechaHora: tsUtc.toISOString(),
+        hora: tsLocalAsUtc.getUTCHours(),
+        totalAcumulado: totals.ventaDia,
+        ticketsHora,
+        ticketsAcumulados: totals.ticketsDia,
       });
-    }
-
-    // Punto final exacto del click (mantiene el acumulado del último punto horario)
-    if (data.length) {
-      data.push({
-        fechaHora: end.toISOString(),
-        hora: end.getHours(),
-        totalAcumulado: data[data.length - 1].totalAcumulado,
-        ticketsHora: data[data.length - 1].ticketsHora,
-        ticketsAcumulados: data[data.length - 1].ticketsAcumulados,
-      });
-    }
+    });
 
     res.json({ success: true, data, meta: { start: start.toISOString(), end: end.toISOString() } });
   } catch (error) {
