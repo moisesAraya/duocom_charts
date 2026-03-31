@@ -392,8 +392,9 @@ router.get('/sucursales', async (req, res, next) => {
     );
     const normalizedRows = rows.map(normalizeRow);
     console.log('[dashboard] sucursales rows', rows.length);
-    /** id = id numérico de BD si existe (calza con id_sucursal en SP); si no, nombre normalizado. */
-    const byId = new Map<string, { id: string; nombre: string }>();
+    /** Sin duplicados: id canónico (1 y "01" → "1"); mismo nombre con distinto id se mantiene. */
+    type BranchRow = { id: string; nombre: string; prefer: number };
+    const collected: BranchRow[] = [];
     for (const row of normalizedRows) {
       const nombre =
         toString(row.descripcion) ||
@@ -403,15 +404,20 @@ router.get('/sucursales', async (req, res, next) => {
           toString(row.sucursal) ||
           getSucursalFromRow(row);
       const idRaw = row.id_sucursal ?? row.idsucursal ?? row.id ?? row.codigo;
-      const hasNumericId =
-        idRaw !== undefined && idRaw !== null && String(idRaw).trim() !== '';
-      const id = hasNumericId ? String(idRaw).trim() : normalizeBranch(nombre || 'Sucursal');
+      const rawStr = idRaw !== undefined && idRaw !== null ? String(idRaw).trim() : '';
+      const hasNumericId = rawStr !== '' && /^\d+$/.test(rawStr);
+      const id = hasNumericId ? String(parseInt(rawStr, 10)) : normalizeBranch(nombre || 'Sucursal');
       const label = (nombre || id).trim() || id;
-      if (!byId.has(id)) byId.set(id, { id, nombre: label });
+      collected.push({ id, nombre: label, prefer: hasNumericId ? 1 : 0 });
     }
-    const data = Array.from(byId.values()).sort((a, b) =>
-      a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
-    );
+    const byId = new Map<string, BranchRow>();
+    for (const e of collected) {
+      const cur = byId.get(e.id);
+      if (!cur || e.prefer > cur.prefer) byId.set(e.id, e);
+    }
+    const data = Array.from(byId.values())
+      .map(({ id, nombre }) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
     res.json({
       success: true,
       data,
@@ -809,9 +815,10 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
     const start = new Date(startLocalAsUtc.getTime() + tzOffsetMin * 60_000);
     const end = new Date(endLocalAsUtc.getTime() + tzOffsetMin * 60_000);
 
-    const limit = parseLimit(req.query.limit, 3000);
+    /** Sin FIRST en Pvt: es detalle por línea; un tope trunca y el acumulado no calza con tu SQL agregado. */
     const startHour = 8;
     const endHour = Math.max(startHour, endLocalAsUtc.getUTCHours());
+    const webSnapLimit = parseLimit(req.query.limit, 3000);
 
     type Pt = {
       fechaHora: string;
@@ -838,7 +845,7 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       for (let i = 0; i < pointsUtc.length; i += 1) {
         const ts = pointsUtc[i];
         try {
-          const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [ts], { limit });
+          const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [ts], { limit: webSnapLimit });
           snapshots.push(rows ?? []);
         } catch (err) {
           console.error('[ventas-tiempo-real-hora][WARN] _Web_VtaAlMin falló en punto', i, {
@@ -879,7 +886,7 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
 
     let pvtRows: NormalizedRow[] = [];
     try {
-      pvtRows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
+      pvtRows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end]);
     } catch (err) {
       console.error('[ventas-tiempo-real-hora] _PvtVentaHoraria falló, usando _Web_VtaAlMin', {
         message: err instanceof Error ? err.message : String(err),
@@ -895,8 +902,7 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
         if (!Number.isFinite(h)) continue;
         const monto =
           toNumber(row.t_bruto) ||
-          toNumber(readField(row, 't_bruto')) ||
-          getTotalFromRow(row);
+          toNumber(readField(row, 't_bruto'));
         const tickets =
           toNumber(row.cant_docs) || toNumber(readField(row, 'cant_docs'));
         const slot = map.get(h) ?? { monto: 0, tickets: 0 };
@@ -935,23 +941,14 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       endLocalAsUtc.getUTCSeconds() !== 0 ||
       endLocalAsUtc.getUTCMilliseconds() !== 0;
 
+    // Mismo criterio que tu SQL: acumulado = suma Pvt "T/Bruto" (no sustituir por venta_dia de _Web_VtaAlMin).
     if (data.length && hasSubHourTail) {
-      let webVenta = cumMonto;
-      try {
-        const webRows = await runProcedure(dbConfig, '_Web_VtaAlMin', [end], { limit });
-        webVenta = (webRows ?? []).reduce((acc, row) => {
-          if (!rowMatchesBranches(row, branches)) return acc;
-          return acc + toNumber(row.venta_dia);
-        }, 0);
-      } catch {
-        /* mantener acumulado Pvt */
-      }
       const lastIso = end.toISOString();
       if (data[data.length - 1]?.fechaHora !== lastIso) {
         data.push({
           fechaHora: lastIso,
           hora: endLocalAsUtc.getUTCHours(),
-          totalAcumulado: webVenta,
+          totalAcumulado: cumMonto,
           ticketsHora: 0,
           ticketsAcumulados: cumTickets,
         });
@@ -974,7 +971,16 @@ router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
       outPoints: data.length,
     });
 
-    res.json({ success: true, data, meta: { start: start.toISOString(), end: end.toISOString() } });
+    res.json({
+      success: true,
+      data,
+      meta: {
+        start: start.toISOString(),
+        end: end.toISOString(),
+        pvtRowCount: pvtRows.length,
+        source: pvtRows.length > 0 ? 'pvt' : 'web_snapshots',
+      },
+    });
   } catch (error) {
     next(error);
   }

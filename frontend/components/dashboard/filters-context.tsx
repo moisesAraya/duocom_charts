@@ -34,6 +34,26 @@ interface FiltersContextValue {
 
 const FiltersContext = createContext<FiltersContextValue | undefined>(undefined);
 
+/** Evita duplicados tipo 1 / "01" y alinea chips con la API. */
+const canonicalBranchId = (id: string): string => {
+  const t = String(id ?? '').trim();
+  if (!t) return '';
+  if (/^\d+$/.test(t)) return String(parseInt(t, 10));
+  return t.toLowerCase();
+};
+
+const dedupeSucursales = (list: BranchOption[]): BranchOption[] => {
+  const m = new Map<string, BranchOption>();
+  for (const s of list) {
+    const id = canonicalBranchId(s.id);
+    if (!id) continue;
+    if (!m.has(id)) m.set(id, { id, nombre: String(s.nombre ?? '').trim() || id });
+  }
+  return Array.from(m.values()).sort((a, b) =>
+    a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
+  );
+};
+
 export const FiltersProvider = ({ children }: { children: React.ReactNode }) => {
   const [sucursales, setSucursales] = useState<BranchOption[]>([]);
   const [selectedSucursales, setSelectedSucursales] = useState<string[]>([]);
@@ -51,10 +71,10 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
     try {
       setIsLoading(true);
       const response = await api.get('/api/sucursales');
-      const data = response.data?.data ?? [];
+      const raw = (response.data?.data ?? []) as BranchOption[];
+      const data = dedupeSucursales(raw.map((s) => ({ id: String(s.id), nombre: s.nombre })));
       setSucursales(data);
-      // Seleccionar todas por defecto
-      setSelectedSucursales(data.map((s: BranchOption) => s.id));
+      setSelectedSucursales(data.map((s) => s.id));
     } catch (error) {
       // Si falla, usar valores por defecto
       const defaultBranches: BranchOption[] = [
@@ -74,11 +94,12 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
   }, [fetchSucursales]);
 
   const toggleSucursal = useCallback((id: string) => {
-    setSelectedSucursales(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(s => s !== id);
-      }
-      return [...prev, id];
+    const c = canonicalBranchId(id);
+    if (!c) return;
+    setSelectedSucursales((prev) => {
+      const canon = prev.map(canonicalBranchId);
+      if (canon.includes(c)) return prev.filter((s) => canonicalBranchId(s) !== c);
+      return [...prev, c];
     });
   }, []);
 

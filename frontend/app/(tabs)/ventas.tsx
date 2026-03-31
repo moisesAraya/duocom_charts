@@ -114,7 +114,22 @@ const niceStep = (value: number) => {
 export default function VentasScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(280, width - 40);
-  const { requestParams = {}, sucursalesReady } = useDashboardFilters();
+  const {
+    requestParams = {},
+    sucursalesReady,
+    sucursales,
+    selectedSucursales,
+    toggleSucursal,
+    selectAllSucursales,
+  } = useDashboardFilters();
+
+  const tiempoRealLineRgb = useMemo(() => {
+    const sel = sucursales.filter((s) => selectedSucursales.includes(s.id));
+    if (sel.length === 1) return getBranchColor(sel[0].nombre, 0);
+    if (sel.length === 0) return "16, 185, 129";
+    const fused = sel.map((s) => s.nombre).sort().join("|");
+    return getBranchColor(fused, 0);
+  }, [sucursales, selectedSucursales]);
 
   const [anoMP, setAnoMP] = useState(() => new Date().getFullYear());
   const [mesMP, setMesMP] = useState(() => new Date().getMonth() + 1);
@@ -248,7 +263,6 @@ export default function VentasScreen() {
         ...baseRequestParams,
         at: requestMoment.toISOString(),
         tzOffsetMin: requestMoment.getTimezoneOffset(),
-        limit: 3000,
       };
 
       const [hourlySettled, snapshotSettled] = await Promise.allSettled([
@@ -414,12 +428,12 @@ export default function VentasScreen() {
       datasets: [
         {
           data: ventasTiempoReal.map((row) => row.totalAcumulado),
-          color: (o: number) => `rgba(16,185,129,${o})`,
+          color: (o: number) => `rgba(${tiempoRealLineRgb},${o})`,
           strokeWidth: 2,
         },
       ],
     }),
-    [ventasTiempoReal, ventasTiempoRealLabels],
+    [ventasTiempoReal, ventasTiempoRealLabels, tiempoRealLineRgb],
   );
 
   const totalAcumuladoHoy = useMemo(
@@ -627,7 +641,48 @@ export default function VentasScreen() {
         title="Ventas en tiempo real"
         headerContent={
           <View style={styles.rtHeaderBlock}>
-            <Text style={styles.rtSubtitle}>Seguimiento del acumulado del día</Text>
+            {sucursales.length > 0 ? (
+              <View style={{ marginBottom: 12 }}>
+                <View style={styles.chipsWrap}>
+                  {sucursales.map((s, idx) => {
+                    const enabled = selectedSucursales.includes(s.id);
+                    const rgb = getBranchColor(s.nombre, idx);
+                    return (
+                      <Pressable
+                        key={s.id}
+                        onPress={() => toggleSucursal(s.id)}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: enabled ? `rgba(${rgb},0.15)` : "#f5f5f5",
+                            borderColor: enabled ? `rgb(${rgb})` : "#e0e0e0",
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: enabled ? "#0f172a" : "#94a3b8" },
+                          ]}
+                        >
+                          {truncateLabel(s.nombre, 14)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {sucursales.length > 1 ? (
+                  <Pressable
+                    onPress={selectAllSucursales}
+                    style={{ alignSelf: "flex-end", paddingVertical: 6 }}
+                  >
+                    <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "600" }}>
+                      Marcar todas
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
             <View style={styles.rtKpiRow}>
               <View style={styles.rtKpiBox}>
                 <Text style={styles.rtKpiLabel}>Acumulado del día</Text>
@@ -730,7 +785,7 @@ export default function VentasScreen() {
         }
         data={ventasTiempoRealData}
         kind="line"
-        colorRgb="16,185,129"
+        colorRgb={tiempoRealLineRgb.replace(/\s/g, "")}
         width={chartWidth}
         height={260}
         xLabel="Hora"
