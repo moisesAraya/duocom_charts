@@ -114,7 +114,7 @@ const niceStep = (value: number) => {
 export default function VentasScreen() {
   const { width } = useWindowDimensions();
   const chartWidth = Math.max(280, width - 40);
-  const { requestParams = {} } = useDashboardFilters();
+  const { requestParams = {}, sucursalesReady } = useDashboardFilters();
 
   const [anoMP, setAnoMP] = useState(() => new Date().getFullYear());
   const [mesMP, setMesMP] = useState(() => new Date().getMonth() + 1);
@@ -366,20 +366,24 @@ export default function VentasScreen() {
   }, [baseRequestParams]);
 
   useEffect(() => {
+    if (!sucursalesReady) return;
     void loadVentasGrupo();
-  }, [loadVentasGrupo]);
+  }, [sucursalesReady, loadVentasGrupo]);
 
   useEffect(() => {
+    if (!sucursalesReady) return;
     void loadVentasMedioPago();
-  }, [loadVentasMedioPago]);
+  }, [sucursalesReady, loadVentasMedioPago]);
 
   useEffect(() => {
+    if (!sucursalesReady) return;
     void loadVentasAnuales();
-  }, [loadVentasAnuales]);
+  }, [sucursalesReady, loadVentasAnuales]);
 
   useEffect(() => {
+    if (!sucursalesReady) return;
     void loadVentasTiempoReal(new Date());
-  }, [loadVentasTiempoReal]);
+  }, [sucursalesReady, loadVentasTiempoReal]);
 
   const loadAllData = useCallback(async () => {
     setRefreshing(true);

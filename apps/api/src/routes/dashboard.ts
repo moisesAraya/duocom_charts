@@ -23,7 +23,6 @@ import {
   runProcedure,
   runProcedureWithFallbacks,
   runProcedureByNames,
-  uniqueList,
   parseSucursalList,
   parseLimit,
   normalizeBranch,
@@ -307,12 +306,29 @@ router.get('/sucursales', async (req, res, next) => {
     );
     const normalizedRows = rows.map(normalizeRow);
     console.log('[dashboard] sucursales rows', rows.length);
-    const branches = uniqueList(
-      normalizedRows.map(row => normalizeBranch(getSucursalFromRow(row)))
+    /** id = id numérico de BD si existe (calza con id_sucursal en SP); si no, nombre normalizado. */
+    const byId = new Map<string, { id: string; nombre: string }>();
+    for (const row of normalizedRows) {
+      const nombre =
+        toString(row.descripcion) ||
+          toString(row.nombre) ||
+          toString(row.descripcion_sucursal) ||
+          toString(row.nombre_sucursal) ||
+          toString(row.sucursal) ||
+          getSucursalFromRow(row);
+      const idRaw = row.id_sucursal ?? row.idsucursal ?? row.id ?? row.codigo;
+      const hasNumericId =
+        idRaw !== undefined && idRaw !== null && String(idRaw).trim() !== '';
+      const id = hasNumericId ? String(idRaw).trim() : normalizeBranch(nombre || 'Sucursal');
+      const label = (nombre || id).trim() || id;
+      if (!byId.has(id)) byId.set(id, { id, nombre: label });
+    }
+    const data = Array.from(byId.values()).sort((a, b) =>
+      a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }),
     );
     res.json({
       success: true,
-      data: branches.map(value => ({ id: value, nombre: value })),
+      data,
     });
   } catch (error) {
     next(error);

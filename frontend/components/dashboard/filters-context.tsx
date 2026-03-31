@@ -19,6 +19,8 @@ export interface BranchOption {
 
 interface FiltersContextValue {
   sucursales: BranchOption[];
+  /** false mientras el primer GET /api/sucursales no termina (evita pedir dashboard con sucursal vacío). */
+  sucursalesReady: boolean;
   selectedSucursales: string[];
   toggleSucursal: (id: string) => void;
   clearSucursales: () => void;
@@ -94,9 +96,12 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
     end: endDate.toISOString().split('T')[0],
   }), [selectedSucursales, startDate, endDate]);
 
+  const sucursalesReady = !isLoading;
+
   const value = useMemo(
     () => ({
       sucursales,
+      sucursalesReady,
       selectedSucursales,
       toggleSucursal,
       clearSucursales,
@@ -109,6 +114,7 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
     }),
     [
       sucursales,
+      sucursalesReady,
       selectedSucursales,
       toggleSucursal,
       clearSucursales,
