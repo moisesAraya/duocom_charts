@@ -90,11 +90,16 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
     setSelectedSucursales(sucursales.map(s => s.id));
   }, [sucursales]);
 
-  const requestParams = useMemo(() => ({
-    sucursal: selectedSucursales.join(','),
-    start: startDate.toISOString().split('T')[0],
-    end: endDate.toISOString().split('T')[0],
-  }), [selectedSucursales, startDate, endDate]);
+  const requestParams = useMemo(() => {
+    const seleccion = sucursales.filter((s) => selectedSucursales.includes(s.id));
+    const sucursalNom = seleccion.map((s) => s.nombre).join('|');
+    return {
+      sucursal: selectedSucursales.join(','),
+      sucursalNom,
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0],
+    };
+  }, [selectedSucursales, sucursales, startDate, endDate]);
 
   const sucursalesReady = !isLoading;
 

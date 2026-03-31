@@ -54,26 +54,63 @@ const isBranchMatch = (rowSucursal: string, filters: string[]): boolean => {
 };
 
 /**
- * Nombre sucursal en fila SP (sin usar id numérico como “nombre”).
+ * Nombre sucursal en fila SP (si "sucursal" es solo dígitos, suele ser código id — no usar como label).
  */
-const getBranchLabelFromRow = (row: NormalizedRow): string =>
-  toString(row.sucursal) ||
-  toString(row.descripcion_sucursal) ||
-  toString(row.nombre_sucursal) ||
-  toString(row.nombre) ||
-  toString(row.descripcion) ||
-  getSucursalFromRow(row);
-
-/** Id sucursal en fila normalizada (varía por SP). */
-const getBranchIdFromRow = (row: NormalizedRow): string =>
-  toString(
-    row.id_sucursal ??
-      row.idsucursal ??
-      row.cod_sucursal ??
-      row.sucursal_id ??
-      row.id_bodega ??
-      row.codigo_sucursal,
+const getBranchLabelFromRow = (row: NormalizedRow): string => {
+  const sucCol = toString(row.sucursal);
+  const sucIsNumeric = /^\d+$/.test(sucCol);
+  if (!sucIsNumeric && sucCol) return sucCol;
+  return (
+    toString(row.descripcion_sucursal) ||
+    toString(row.nombre_sucursal) ||
+    toString(row.nombre) ||
+    toString(row.descripcion) ||
+    (!sucIsNumeric ? getSucursalFromRow(row) : '') ||
+    'N/A'
   );
+};
+
+/**
+ * Id sucursal: columnas habituales + columna "sucursal" cuando viene numérica + barrido por claves.
+ */
+const getBranchIdFromRow = (row: NormalizedRow): string => {
+  const candidates: unknown[] = [
+    row.id_sucursal,
+    row.idsucursal,
+    row.cod_sucursal,
+    row.sucursal_id,
+    row.id_bodega,
+    row.codigo_sucursal,
+    row.n_sucursal,
+    row.codigo,
+    row.id_local,
+  ];
+  const sucStr = toString(row.sucursal);
+  if (/^\d+$/.test(sucStr)) candidates.unshift(row.sucursal);
+
+  for (const c of candidates) {
+    const s = toString(c);
+    if (!/^-?\d+$/.test(s)) continue;
+    return String(parseInt(s, 10));
+  }
+
+  for (const [key, val] of Object.entries(row)) {
+    const kl = key.toLowerCase();
+    const looksBranchKey =
+      kl.includes('sucursal') ||
+      kl.includes('id_suc') ||
+      kl.includes('cod_suc') ||
+      kl === 'suc' ||
+      kl.includes('bodega') ||
+      kl.includes('id_local');
+    if (!looksBranchKey) continue;
+    const s = toString(val);
+    if (!/^-?\d+$/.test(s)) continue;
+    return String(parseInt(s, 10));
+  }
+
+  return '';
+};
 
 /**
  * Fila SP vs filtros desde la app (ids numéricos y/o nombres).
@@ -96,6 +133,20 @@ const rowMatchesBranches = (row: NormalizedRow, filters: string[]): boolean => {
     }
     return isBranchMatch(name, [f]) || (idStr !== '' && isBranchMatch(idStr, [f]));
   });
+};
+
+/**
+ * Filtro de sucursal: ids en `sucursal` + nombres en `sucursalNom` (separados por |).
+ * Así las filas del SP que solo traen nombre calzan aunque el cliente envíe solo id numérico.
+ */
+const branchFiltersFromRequest = (req: Request): string[] => {
+  const ids = parseSucursalList(req.query.sucursal);
+  const raw = req.query.sucursalNom ?? req.query.sucursal_nombre;
+  const noms =
+    typeof raw === 'string'
+      ? raw.split('|').map((s) => s.trim()).filter(Boolean)
+      : [];
+  return Array.from(new Set([...ids, ...noms]));
 };
 
 // Middleware para loguear dbConfig en cada request del dashboard
@@ -376,7 +427,7 @@ router.get('/dashboard/clientes-hora', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 3000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
     const totals = new Map<
       string,
@@ -415,7 +466,7 @@ router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 3000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
 
     const accumulate = (list: NormalizedRow[], useFilter: boolean) => {
@@ -431,11 +482,7 @@ router.get('/dashboard/ventas-medio-pago', async (req, res, next) => {
       return map;
     };
 
-    let totals = accumulate(rows, true);
-    if (!totals.size && rows.length > 0 && branches.length > 0) {
-      totals = accumulate(rows, false);
-      console.warn('[ventas-medio-pago] filtro sucursal vacío; se devolvió sin filtrar');
-    }
+    const totals = accumulate(rows, branches.length > 0);
 
     const data = Array.from(totals.entries())
       .map(([key, monto]) => {
@@ -456,7 +503,7 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const topN = parseNumber(toString(req.query.topN), 20);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     let rows: NormalizedRow[] = [];
     try {
       rows = await runProcedure(dbConfig, 'SQL_TopNVentasPorGrupo', [start, end, topN], {
@@ -498,38 +545,9 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
       totals.set(group, (totals.get(group) ?? 0) + total);
     }
 
-    let data = Array.from(totals.entries())
+    const data = Array.from(totals.entries())
       .map(([grupo, total]) => ({ grupo, total }))
       .sort((a, b) => b.total - a.total);
-
-    if (!data.length && rows.length > 0 && branches.length > 0) {
-      totals.clear();
-      for (const row of rows) {
-        const group =
-          toString(
-            row.grupo ||
-              row.nombre_grupo ||
-              row.descripcion_grupo ||
-              row.grupo_desc ||
-              row.descripcion_corta ||
-              row.descripcion_art_serv ||
-              row.descripcion_articulo ||
-              row.descripcion ||
-              row.nombre
-          ) || 'Sin grupo';
-        const total =
-          toNumber(row.total) ||
-          toNumber(row.total_venta) ||
-          toNumber(row.venta) ||
-          toNumber(row.monto) ||
-          toNumber(row.importe);
-        totals.set(group, (totals.get(group) ?? 0) + total);
-      }
-      data = Array.from(totals.entries())
-        .map(([grupo, total]) => ({ grupo, total }))
-        .sort((a, b) => b.total - a.total);
-      console.warn('[ventas-por-grupo] filtro de sucursal dejó todo vacío; se devolvió sin filtrar');
-    }
 
     res.json({ success: true, data });
   } catch (error) {
@@ -542,7 +560,7 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
     const years = Number.parseInt(String(req.query.years ?? '3'), 10);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await getProyVentaAnualRows(dbConfig, Number.isFinite(years) ? years : 3);
     const totals = new Map<string, number>();
 
@@ -560,34 +578,12 @@ router.get('/dashboard/ventas-anuales', async (req, res, next) => {
       totals.set(key, (totals.get(key) ?? 0) + total);
     }
 
-    let data = Array.from(totals.entries())
+    const data = Array.from(totals.entries())
       .map(([key, total]) => {
         const [sucursal, anioRaw] = key.split('::');
         return { sucursal, anio: Number(anioRaw), total };
       })
       .sort((a, b) => a.anio - b.anio);
-
-    if (!data.length && rows.length > 0 && branches.length > 0) {
-      totals.clear();
-      for (const row of rows) {
-        const anio =
-          toNumber(row.ano) ||
-          toNumber(row.anio) ||
-          toNumber(row.ejercicio) ||
-          toNumber(row.periodo);
-        const sucursal = getSucursalFromRow(row);
-        const total = getTotalFromRow(row);
-        const key = `${sucursal}::${anio}`;
-        totals.set(key, (totals.get(key) ?? 0) + total);
-      }
-      data = Array.from(totals.entries())
-        .map(([key, total]) => {
-          const [sucursal, anioRaw] = key.split('::');
-          return { sucursal, anio: Number(anioRaw), total };
-        })
-        .sort((a, b) => a.anio - b.anio);
-      console.warn('[ventas-anuales] filtro de sucursal dejó todo vacío; se devolvió sin filtrar');
-    }
 
     res.json({ success: true, data });
   } catch (error) {
@@ -601,7 +597,7 @@ router.get('/dashboard/resumen-mensual-ventas', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 3000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedureByNames(
       dbConfig,
       ['Graf VentasDiarias', 'GRAF_VENTASDIARIAS'],
@@ -610,10 +606,7 @@ router.get('/dashboard/resumen-mensual-ventas', async (req, res, next) => {
     );
 
     const data = rows
-      .filter(row => {
-        const sucursal = getSucursalFromRow(row);
-        return branches.length ? branches.includes(sucursal) : true;
-      })
+      .filter(row => (branches.length ? rowMatchesBranches(row, branches) : true))
       .map(row => ({
         fecha: row.fecha,
         sucursal: getSucursalFromRow(row),
@@ -633,7 +626,7 @@ router.get('/dashboard/resumen-anual-ventas', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { end } = getDateRange(req.query as Record<string, unknown>);
     const year = Number.parseInt(String(req.query.anio ?? end.getFullYear()), 10);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await getProyVentaAnualRows(dbConfig, 5);
     const totals = new Map<string, number>();
 
@@ -672,7 +665,7 @@ router.get('/dashboard/venta-minuto', async (req, res, next) => {
     let fecha = parseDateParam(fechaParam);
     if (!fecha) fecha = new Date();
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     console.log('[VENTA-MINUTO][DEBUG] Antes de runProcedure', { fecha, limit, branches });
     // Llamar al nuevo SP con solo la fecha
     const rows = await runProcedure(dbConfig, '_Web_VtaAlMin', [fecha], { limit });
@@ -728,7 +721,7 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
     const { end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 1500);
     const rows = await runProcedure(dbConfig, '_PvtStock', [end], { limit });
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const data = rows
       .map(row => {
         const sucursal =
@@ -797,7 +790,7 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
 router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
   try {
     const dbConfig = getDbConfig(req);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
 
     const atRaw = req.query.at ? String(req.query.at) : '';
     const at = atRaw ? new Date(atRaw) : new Date();
@@ -993,7 +986,7 @@ router.get('/dashboard/productos-rotacion', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await getRotacionRows(dbConfig, start, limit);
     const totals = new Map<string, number>();
 
@@ -1028,7 +1021,7 @@ router.get('/dashboard/rentabilidad-productos', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await getRotacionRows(dbConfig, start, limit);
     const totals = new Map<string, number>();
 
@@ -1063,7 +1056,7 @@ router.get('/dashboard/cuentas-cobrar', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedureWithFallbacks(
       dbConfig,
       '_PvtDocXCobrar',
@@ -1098,7 +1091,7 @@ router.get('/dashboard/cuentas-pagar', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtDocXPagar', [start, end], { limit });
     const data = rows
       .map(row => ({
@@ -1124,7 +1117,7 @@ router.get('/dashboard/cuentas-pagar/resumen-proveedor', async (req, res, next) 
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 4000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtDocXPagar', [start, end], { limit });
     const docs = normalizeCuentasPagarDocs(rows, end, branches);
     const totals = new Map<
@@ -1177,7 +1170,7 @@ router.get('/dashboard/cuentas-pagar/flujo', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 4000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtDocXPagar', [start, end], { limit });
     const docs = normalizeCuentasPagarDocs(rows, end, branches);
 
@@ -1282,7 +1275,7 @@ router.get('/dashboard/cuentas-pagar/vencidos-proveedor', async (req, res, next)
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 4000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtDocXPagar', [start, end], { limit });
     const docs = normalizeCuentasPagarDocs(rows, end, branches).filter(doc => doc.daysToDue < 0);
     const grouped = new Map<
@@ -1333,7 +1326,7 @@ router.get('/dashboard/clientes-morosos', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedureWithFallbacks(
       dbConfig,
       '_PvtDocXCobrar',
@@ -1454,7 +1447,7 @@ router.get('/dashboard/registro-eventos', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start, end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, 'zResumenVentas', [start, end], { limit });
     const data = rows
       .map(row => ({
@@ -1479,7 +1472,7 @@ router.get('/dashboard/consumo-materias-primas', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { start } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 2000);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await getRotacionRows(dbConfig, start, limit);
     const totals = new Map<string, number>();
 
@@ -1508,7 +1501,7 @@ router.get('/dashboard/productos-quiebre-stock', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 1500);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtStock', [end], { limit });
     const data = rows
       .map(row => ({
@@ -1534,7 +1527,7 @@ router.get('/dashboard/tiempo-reposicion', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const { end } = getDateRange(req.query as Record<string, unknown>);
     const limit = parseLimit(req.query.limit, 1500);
-    const branches = parseSucursalList(req.query.sucursal);
+    const branches = branchFiltersFromRequest(req);
     const rows = await runProcedure(dbConfig, '_PvtStock', [end], { limit });
     const data = rows
       .map(row => ({
@@ -1773,7 +1766,7 @@ router.get('/dashboard/ventas-tiempo-real', async (req, res, next) => {
     startOfDay.setHours(0, 0, 0, 0);
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const todayIso = now.toISOString().slice(0, 10);
-    const branches = parseSucursalList(req.query.sucursal).map(normalizeBranch);
+    const branches = branchFiltersFromRequest(req).map(normalizeBranch);
 
     const limit = parseLimit(req.query.limit, 300);
     let warning: string | undefined;
