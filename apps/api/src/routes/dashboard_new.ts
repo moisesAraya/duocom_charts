@@ -1,16 +1,7 @@
-/**
- * dashboard_new.ts — Versión alternativa del router de dashboard.
- *
- * Contiene los mismos endpoints que dashboard.ts pero con ligeras
- * variaciones en la lógica de algunos endpoints (p. ej. ventas-anuales
- * divide por 1 000 000 para mostrar en M$, graf-vta-mes-suc usa
- * runProcedure en vez de query directo).
- *
- * NOTA: Este archivo se mantiene como referencia / versión experimental.
- * En producción se usa dashboard.ts (montado en /api).
- */
+
 
 import { Router } from 'express';
+import { executeQuery } from '../db/firebirdPool';
 import {
   getDbConfig,
   toNumber,
@@ -26,6 +17,116 @@ import {
 } from '../helpers/db-helpers';
 
 const router = Router();
+
+// Tickets por hora (eDoc/eDocDet) + punto real-time
+router.get('/dashboard/tickets-por-hora', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const { start, end } = getDateRange(req.query as Record<string, unknown>);
+    const branches = parseSucursalList(req.query.sucursal);
+    const realTime = req.query.realtime ? new Date(String(req.query.realtime)) : null;
+    // 1. Tickets por hora y sucursal
+    const sql = `
+      SELECT
+        CAST(FECHA AS DATE) AS fecha,
+        EXTRACT(HOUR FROM FECHA) AS hora,
+        ${branches.length ? 'SUCURSAL,' : ''}
+        COUNT(*) AS tickets
+      FROM EDOC
+      WHERE FECHA >= ? AND FECHA <= ?
+      ${branches.length ? 'AND SUCURSAL IN (' + branches.map(() => '?').join(',') + ')' : ''}
+      GROUP BY fecha, hora${branches.length ? ', SUCURSAL' : ''}
+      ORDER BY fecha, hora${branches.length ? ', SUCURSAL' : ''}
+    `;
+    const params = [start, end, ...branches];
+    type DataRow = { fecha: string | Date; hora: number; sucursal: string; tickets: number; realTime?: boolean };
+    type Row = { FECHA: Date|string; HORA: number; SUCURSAL?: string; TICKETS: number };
+    const rows = await executeQuery<Row>(dbConfig, sql, params);
+    let data: DataRow[] = rows.map(row => ({
+      fecha: row.FECHA,
+      hora: row.HORA,
+      sucursal: row.SUCURSAL || 'N/A',
+      tickets: row.TICKETS
+    }));
+    // 2. Real-time point (última hora)
+    if (realTime) {
+      const hora = realTime.getHours();
+      const fecha = realTime.toISOString().slice(0, 10);
+      const sqlReal = `
+        SELECT COUNT(*) AS tickets
+        FROM EDOC
+        WHERE FECHA >= ? AND FECHA < ?
+        ${branches.length ? 'AND SUCURSAL IN (' + branches.map(() => '?').join(',') + ')' : ''}
+      `;
+      const startReal = new Date(realTime);
+      startReal.setMinutes(0, 0, 0);
+      const endReal = new Date(startReal);
+      endReal.setHours(startReal.getHours() + 1);
+      const paramsReal = [startReal, endReal, ...branches];
+      const realRow = await executeQuery<{ TICKETS: number }>(dbConfig, sqlReal, paramsReal);
+      data.push({
+        fecha,
+        hora,
+        sucursal: branches[0] || 'N/A',
+        tickets: realRow[0]?.TICKETS || 0,
+        realTime: true
+      });
+    }
+
+    // 3. KPIs globales y por sucursal
+    // Agrupar por sucursal
+    const sucursales = Array.from(new Set(data.map(d => d.sucursal)));
+    const kpis: Record<string, any> = {};
+    let totalTicketsDia = 0;
+    let totalHoras = 0;
+    let totalMinutos = 0;
+    sucursales.forEach(suc => {
+      const datosSuc = data.filter(d => d.sucursal === suc);
+      const total = datosSuc.reduce((sum, d) => sum + d.tickets, 0);
+      const horas = datosSuc.length;
+      const minutos = horas * 60;
+      totalTicketsDia += total;
+      totalHoras += horas;
+      totalMinutos += minutos;
+      kpis[suc] = {
+        totalTickets: total,
+        ticketPromHora: horas ? total / horas : 0,
+        ticketPromMin: minutos ? total / minutos : 0,
+        // Puedes agregar más KPIs aquí (objetivo, avance, ranking, etc.)
+      };
+    });
+    // KPIs globales
+    const kpiGlobal = {
+      totalTickets: totalTicketsDia,
+      ticketPromHora: totalHoras ? totalTicketsDia / totalHoras : 0,
+      ticketPromMin: totalMinutos ? totalTicketsDia / totalMinutos : 0,
+      // Puedes agregar más KPIs globales aquí
+    };
+    // Ranking de sucursales por tickets
+    const ranking = sucursales
+      .map(suc => ({ sucursal: suc, total: kpis[suc].totalTickets }))
+      .sort((a, b) => b.total - a.total)
+      .map((item, idx) => ({ ...item, ranking: idx + 1 }));
+    ranking.forEach(r => {
+      kpis[r.sucursal].ranking = r.ranking;
+    });
+
+    res.json({ success: true, data, kpis, kpiGlobal, ranking });
+  } catch (error) {
+    next(error);
+  }
+});
+/**
+ * dashboard_new.ts — Versión alternativa del router de dashboard.
+ *
+ * Contiene los mismos endpoints que dashboard.ts pero con ligeras
+ * variaciones en la lógica de algunos endpoints (p. ej. ventas-anuales
+ * divide por 1 000 000 para mostrar en M$, graf-vta-mes-suc usa
+ * runProcedure en vez de query directo).
+ *
+ * NOTA: Este archivo se mantiene como referencia / versión experimental.
+ * En producción se usa dashboard.ts (montado en /api).
+ */
 
 // Lista de sucursales disponibles en la BD del cliente
 router.get('/sucursales', async (req, res, next) => {

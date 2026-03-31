@@ -666,6 +666,72 @@ router.get('/dashboard/inventario-valorizado', async (req, res, next) => {
   }
 });
 
+// Ventas acumuladas por hora (08:00 -> momento de la consulta) + punto exacto del click
+router.get('/dashboard/ventas-tiempo-real-hora', async (req, res, next) => {
+  try {
+    const dbConfig = getDbConfig(req);
+    const branches = parseSucursalList(req.query.sucursal);
+
+    const atRaw = req.query.at ? String(req.query.at) : '';
+    const at = atRaw ? new Date(atRaw) : new Date();
+    if (Number.isNaN(at.getTime())) {
+      res.status(400).json({ success: false, error: 'Invalid query param: at' });
+      return;
+    }
+
+    const start = new Date(at);
+    start.setHours(8, 0, 0, 0);
+
+    const end = new Date(at);
+
+    const limit = parseLimit(req.query.limit, 3000);
+    const rows = await runProcedure(dbConfig, '_PvtVentaHoraria', [start, end], { limit });
+
+    // Agrupar total por hora (sumando sucursales), luego convertir a acumulado
+    const hourlyTotals = new Map<number, number>();
+    for (const row of rows) {
+      const sucursal = toString(row.sucursal) || 'N/A';
+      if (branches.length && !isBranchMatch(sucursal, branches)) continue;
+
+      const hora = Math.trunc(toNumber(row.hora));
+      if (!Number.isFinite(hora) || hora < 0 || hora > 23) continue;
+
+      const monto =
+        toNumber(row.t_bruto) ||
+        toNumber(row.total) ||
+        toNumber(row.monto) ||
+        toNumber(row.venta);
+
+      hourlyTotals.set(hora, (hourlyTotals.get(hora) ?? 0) + (Number.isFinite(monto) ? monto : 0));
+    }
+
+    const startHour = 8;
+    const endHour = end.getHours();
+    let acumulado = 0;
+    const data: Array<{ fechaHora: string; hora: number; totalAcumulado: number }> = [];
+
+    for (let h = startHour; h <= endHour; h += 1) {
+      acumulado += hourlyTotals.get(h) ?? 0;
+      const d = new Date(end);
+      d.setHours(h, 0, 0, 0);
+      data.push({ fechaHora: d.toISOString(), hora: h, totalAcumulado: acumulado });
+    }
+
+    // Punto final exacto del click (mantiene el acumulado del último punto horario)
+    if (data.length) {
+      data.push({
+        fechaHora: end.toISOString(),
+        hora: end.getHours(),
+        totalAcumulado: data[data.length - 1].totalAcumulado,
+      });
+    }
+
+    res.json({ success: true, data, meta: { start: start.toISOString(), end: end.toISOString() } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Ranking de rotación de productos (top 20)
 router.get('/dashboard/productos-rotacion', async (req, res, next) => {
   try {

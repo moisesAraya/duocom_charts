@@ -1,30 +1,4 @@
-
-/**
- * ventas.tsx — Pestaña de Ventas del dashboard.
- *
- * Muestra los siguientes gráficos / tarjetas:
- *  - Análisis de ventas mensual por sucursal (líneas, datos de Graf_VtaMes_Suc)
- *  - Ventas anuales por sucursal (barras horizontales apiladas)
- *  - Ventas por medio de pago (barras horizontales)
- *  - Ventas por grupo de producto (barra horizontal simple)
- *  - Resumen diario de ventas (línea con KPIs)
- *  - Detalle de ventas por transacción (tabla scrollable)
- *
- * Los datos se cargan desde la API REST autenticada por JWT.
- * Soporta filtros de fecha y sucursal desde el contexto compartido.
- */
-
-// app/(tabs)/ventas.tsx
-import { api } from "@/constants/api";
-import { ChartCard } from "@/components/dashboard/chart-card";
-import { ScreenShell } from "@/components/dashboard/screen-shell";
-import { useDashboardFilters } from "@/components/dashboard/filters-context";
-import {
-  formatCompact,
-  formatCurrency,
-  formatDateInput,
-  sparsifyLabels,
-} from "@/components/dashboard/utils";
+import * as ScreenOrientation from "expo-screen-orientation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Modal,
@@ -36,13 +10,18 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { LineChart } from "react-native-chart-kit";
 import { Text as SvgText } from "react-native-svg";
-
-/* =========================
-   TYPES
-========================= */
+import { ChartCard } from "@/components/dashboard/chart-card";
+import { useDashboardFilters } from "@/components/dashboard/filters-context";
+import { ScreenShell } from "@/components/dashboard/screen-shell";
+import {
+  formatCompact,
+  formatCurrency,
+  formatDateInput,
+  sparsifyLabels,
+} from "@/components/dashboard/utils";
+import { api } from "@/constants/api";
 
 interface VentasAnualesRow {
   sucursal: string;
@@ -64,6 +43,7 @@ interface GrupoVentaRow {
 interface VentaTiempoRealRow {
   fechaHora: string;
   totalAcumulado: number;
+  sucursal?: string;
 }
 
 interface VentasTiempoRealKpis {
@@ -75,145 +55,81 @@ interface VentasTiempoRealKpis {
   frecuenciaVentaMinutos: number | null;
 }
 
-const buildMockVentasTiempoReal = (now: Date = new Date()): VentaTiempoRealRow[] => {
-  const start = new Date(now);
-  start.setHours(8, 0, 0, 0);
-
-  if (now.getTime() < start.getTime()) {
-    start.setHours(0, 0, 0, 0);
-  }
-
-  const points: VentaTiempoRealRow[] = [];
-  let cursor = new Date(start);
-  let acumulado = 0;
-  let index = 0;
-
-  while (cursor.getTime() <= now.getTime()) {
-    const base = 85_000 + (index % 6) * 12_000;
-    const wave = (Math.sin(index / 2) + 1) * 14_000;
-    acumulado += Math.round(base + wave);
-
-    points.push({
-      fechaHora: cursor.toISOString(),
-      totalAcumulado: acumulado,
-    });
-
-    cursor = new Date(cursor.getTime() + 30 * 60 * 1000);
-    index += 1;
-  }
-
-  if (!points.length) {
-    return [{ fechaHora: now.toISOString(), totalAcumulado: 0 }];
-  }
-
-  return points;
-};
-
-/* =========================
-   HELPERS
-========================= */
-
-const truncateLabel = (value: string, max: number) =>
-  value.length > max ? `${value.slice(0, max)}...` : value;
-
-// Truncar nombres de sucursal para gráficos y selectores
-const truncateSucursal = (nombre: string, max = 10) => {
-  if (!nombre) return '';
-  return nombre.length > max ? nombre.slice(0, max) + '…' : nombre;
-};
-
 const SERIES_COLORS = [
-  "59,130,246",
-  "16,185,129",
-  "245,158,11",
-  "139,92,246",
-  "236,72,153",
-  "14,116,144",
-  "234,88,12",
-  "248,113,113",
-  "34,197,94",
-  "251,146,60",
+  "59, 130, 246",
+  "16, 185, 129",
+  "245, 158, 11",
+  "139, 92, 246",
+  "236, 72, 153",
+  "14, 116, 144",
+  "234, 88, 12",
+  "248, 113, 113",
+  "34, 197, 94",
+  "251, 146, 60",
 ];
-
-const getBranchColor = (key: string, index = 0) => {
-  if (!key) return SERIES_COLORS[index % SERIES_COLORS.length];
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) % 997;
-  }
-  return SERIES_COLORS[hash % SERIES_COLORS.length];
-};
 
 const toNumber = (value: unknown): number => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
-    const parsed = Number(value.replace(/[^\d.-]/g, ""));
-    return Number.isNaN(parsed) ? 0 : parsed;
+    const normalized = value.replace(/\./g, "").replace(",", ".").replace(/[^\d.-]/g, "");
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
 };
 
-const toNullableNumber = (value: unknown): number | null => {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = toNumber(value);
-  return Number.isFinite(parsed) ? parsed : null;
+const truncateLabel = (value: string, max: number) =>
+  value.length > max ? `${value.slice(0, max)}...` : value;
+
+const truncateSucursal = (value: string, max: number) => truncateLabel(value, max);
+
+const getBranchColor = (branch: string, fallbackIndex = 0): string => {
+  if (!branch) return SERIES_COLORS[fallbackIndex % SERIES_COLORS.length];
+  let hash = 0;
+  for (let i = 0; i < branch.length; i += 1) {
+    hash = (hash * 31 + branch.charCodeAt(i)) % 997;
+  }
+  return SERIES_COLORS[hash % SERIES_COLORS.length];
 };
 
-function niceStep(rawStep: number) {
-  if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
-  const exp = Math.floor(Math.log10(rawStep));
-  const base = Math.pow(10, exp);
-  const f = rawStep / base;
+const calcStepFromMax = (max: number) => {
+  if (!Number.isFinite(max) || max <= 0) return 1;
+  if (max <= 10) return 1;
+  if (max <= 50) return 5;
+  if (max <= 100) return 10;
+  return Math.ceil(max / 5);
+};
 
-  let niceF: number;
-  if (f <= 1) niceF = 1;
-  else if (f <= 2) niceF = 2;
-  else if (f <= 5) niceF = 5;
-  else niceF = 10;
+const niceStep = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  const exponent = Math.floor(Math.log10(value));
+  const fraction = value / Math.pow(10, exponent);
+  let niceFraction = 10;
+  if (fraction <= 1) niceFraction = 1;
+  else if (fraction <= 2) niceFraction = 2;
+  else if (fraction <= 5) niceFraction = 5;
+  return niceFraction * Math.pow(10, exponent);
+};
 
-  return niceF * base;
-}
-
-function calcStepFromMax(maxValue: number) {
-  if (!Number.isFinite(maxValue) || maxValue <= 0) return 1;
-  return niceStep(maxValue / 6);
-}
-
-/* =========================
-   COMPONENT
-========================= */
+const buildMockVentasTiempoReal = (): VentaTiempoRealRow[] => {
+  const now = new Date();
+  let acumulado = 0;
+  return Array.from({ length: 24 }, (_, idx) => {
+    const d = new Date(now);
+    d.setHours(idx, 0, 0, 0);
+    acumulado += Math.round(Math.random() * 220_000 + 120_000);
+    return {
+      fechaHora: d.toISOString(),
+      totalAcumulado: acumulado,
+      sucursal: "General",
+    };
+  });
+};
 
 export default function VentasScreen() {
-
-
-
-
-    // ...existing state and hooks...
-
-
-    // ...existing state and hooks...
-
-    // Place derived hooks and helpers here, after all state/hooks and derived variables
-
-    // ...existing state, useEffect, and derived variables...
-
-
-
+  const { width } = useWindowDimensions();
+  const chartWidth = Math.max(280, width - 40);
   const { requestParams = {} } = useDashboardFilters();
-  const { width, height } = useWindowDimensions();
-  const isPortrait = height >= width;
-
-  useEffect(() => {
-    ScreenOrientation.unlockAsync();
-  }, []);
-
-  const chartWidth = isPortrait
-    ? Math.max(320, width - 40)
-    : Math.max(480, width - 120);
-
-  /* =========================
-     STATE
-  ========================= */
 
   const [anoMP, setAnoMP] = useState(() => new Date().getFullYear());
   const [mesMP, setMesMP] = useState(() => new Date().getMonth() + 1);
@@ -227,7 +143,7 @@ export default function VentasScreen() {
   const [loadingVentasAnuales, setLoadingVentasAnuales] = useState(true);
   const [loadingVentasMedioPago, setLoadingVentasMedioPago] = useState(true);
   const [loadingVentasGrupo, setLoadingVentasGrupo] = useState(true);
-  const [loadingVentasTiempoReal, setLoadingVentasTiempoReal] = useState(true);
+  const [loadingVentasTiempoReal, setLoadingVentasTiempoReal] = useState(false);
 
   const [refreshing, setRefreshing] = useState(false);
   const [showVentasAnualesValues, setShowVentasAnualesValues] = useState(false);
@@ -336,44 +252,33 @@ export default function VentasScreen() {
       setLoadingVentasAnuales(false);
     }
   }, [ventasAnualesParams]);
-  const loadVentasTiempoReal = useCallback(async () => {
+  const loadVentasTiempoReal = useCallback(async (clickedAt?: Date) => {
     setLoadingVentasTiempoReal(true);
+    const requestMoment = clickedAt ?? new Date();
     try {
-      const res = await api.get('/api/dashboard/venta-minuto', {
-        params: { ...baseRequestParams, limit: 240 },
+      const res = await api.get("/api/dashboard/ventas-tiempo-real-hora", {
+        params: {
+          ...baseRequestParams,
+          at: requestMoment.toISOString(),
+          limit: 3000,
+        },
       });
 
-      const rawKpis = res.data?.meta?.kpis;
-      if (rawKpis) {
-        setVentasTiempoRealKpis({
-          ticketPromedioDiario: toNumber(rawKpis.ticketPromedioDiario),
-          ticketPromedioMensual: toNumber(rawKpis.ticketPromedioMensual),
-          cantidadTicketsDia: toNumber(rawKpis.cantidadTicketsDia),
-          cantidadTicketsMes: toNumber(rawKpis.cantidadTicketsMes),
-          promedioTicketsDiarioMes: toNumber(rawKpis.promedioTicketsDiarioMes),
-          frecuenciaVentaMinutos: toNullableNumber(rawKpis.frecuenciaVentaMinutos),
-        });
-      } else {
-        setVentasTiempoRealKpis(null);
-      }
-
-      const rows = (res.data?.data ?? [])
+      const rows: VentaTiempoRealRow[] = (res.data?.data ?? [])
         .map((row: any) => ({
-          fechaHora: String(row.fechaHora || row.fecha_hora || ''),
-          totalAcumulado: toNumber(row.totalAcumulado ?? row.total_acumulado),
+          fechaHora: String(row.fechaHora ?? row.fechahora ?? ""),
+          totalAcumulado: toNumber(row.totalAcumulado ?? row.totalacumulado ?? row.total),
+          sucursal: row.sucursal,
         }))
-        .filter((row: VentaTiempoRealRow) => row.fechaHora);
+        .filter((r) => r.fechaHora && Number.isFinite(r.totalAcumulado));
 
-      if (rows.length > 0) {
-        setVentasTiempoReal(rows);
-        setVentasTiempoRealEsMock(false);
-      } else {
-        setVentasTiempoReal(buildMockVentasTiempoReal());
-        setVentasTiempoRealEsMock(true);
-      }
+      setVentasTiempoReal(rows);
+      setVentasTiempoRealEsMock(false);
+      // Si quieres mostrar KPIs, puedes calcularlos aquí a partir de los datos reales
+      setVentasTiempoRealKpis(null); // O calcula KPIs si tienes los datos
     } catch {
-      setVentasTiempoReal(buildMockVentasTiempoReal());
-      setVentasTiempoRealEsMock(true);
+      setVentasTiempoReal([]);
+      setVentasTiempoRealEsMock(false);
       setVentasTiempoRealKpis(null);
     } finally {
       setLoadingVentasTiempoReal(false);
@@ -392,14 +297,6 @@ export default function VentasScreen() {
   useEffect(() => {
     void loadVentasAnuales();
   }, [loadVentasAnuales]);
-  useEffect(() => {
-    void loadVentasTiempoReal();
-    const id = setInterval(() => {
-      void loadVentasTiempoReal();
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [loadVentasTiempoReal]);
-
   const loadAllData = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -407,12 +304,11 @@ export default function VentasScreen() {
         loadVentasGrupo(),
         loadVentasMedioPago(),
         loadVentasAnuales(),
-        loadVentasTiempoReal(),
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadVentasAnuales, loadVentasGrupo, loadVentasMedioPago, loadVentasTiempoReal]);
+  }, [loadVentasAnuales, loadVentasGrupo, loadVentasMedioPago]);
 
   const ventasTiempoRealLabels = useMemo(() => {
     if (!ventasTiempoReal.length) return [];
@@ -450,10 +346,8 @@ export default function VentasScreen() {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }, [ventasTiempoReal]);
 
-  // Removed invalid useMemo for horaConsulta. If needed, reimplement with correct logic and dependencies.
-
   const onRefreshVentasTiempoReal = useCallback(() => {
-    void loadVentasTiempoReal();
+    void loadVentasTiempoReal(new Date());
   }, [loadVentasTiempoReal]);
 
   /* =========================
