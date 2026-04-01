@@ -13,6 +13,7 @@ import {
 import { LineChart } from "react-native-chart-kit";
 import { Text as SvgText } from "react-native-svg";
 import { BranchMultiSelect } from "@/components/dashboard/branch-multi-select";
+import { branchRgbForSucursalName } from "@/components/dashboard/branch-colors";
 import { ChartCard } from "@/components/dashboard/chart-card";
 import {
   branchQueryParamsFromIds,
@@ -62,19 +63,6 @@ interface VentasTiempoRealKpis {
   frecuenciaVentaMinutos: number | null;
 }
 
-const SERIES_COLORS = [
-  "59, 130, 246",
-  "16, 185, 129",
-  "245, 158, 11",
-  "139, 92, 246",
-  "236, 72, 153",
-  "14, 116, 144",
-  "234, 88, 12",
-  "248, 113, 113",
-  "34, 197, 94",
-  "251, 146, 60",
-];
-
 const toNumber = (value: unknown): number => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -87,15 +75,6 @@ const toNumber = (value: unknown): number => {
 
 const truncateLabel = (value: string, max: number) =>
   value.length > max ? `${value.slice(0, max)}...` : value;
-
-const getBranchColor = (branch: string, fallbackIndex = 0): string => {
-  if (!branch) return SERIES_COLORS[fallbackIndex % SERIES_COLORS.length];
-  let hash = 0;
-  for (let i = 0; i < branch.length; i += 1) {
-    hash = (hash * 31 + branch.charCodeAt(i)) % 997;
-  }
-  return SERIES_COLORS[hash % SERIES_COLORS.length];
-};
 
 const calcStepFromMax = (max: number) => {
   if (!Number.isFinite(max) || max <= 0) return 1;
@@ -189,7 +168,7 @@ export default function VentasScreen() {
     const one = id
       ? sucursales.find((s) => canonicalBranchId(s.id) === canonicalBranchId(id))
       : undefined;
-    if (one) return getBranchColor(one.nombre, 0);
+    if (one) return branchRgbForSucursalName(sucursales, one.nombre);
     return "16, 185, 129";
   }, [sucursales, selTiempoReal]);
 
@@ -583,7 +562,7 @@ export default function VentasScreen() {
 
     return {
       labels: yearLabels,
-      datasets: filteredBranches.map((branch, idx) => ({
+      datasets: filteredBranches.map((branch) => ({
         data: yearsWithPadding.map((year) =>
           ventasAnualesForLine
             .filter(
@@ -591,12 +570,12 @@ export default function VentasScreen() {
             )
             .map((r) => r.total)[0] ?? 0,
         ),
-        color: () => `rgba(${getBranchColor(branch, idx)},1)`,
+        color: () => `rgba(${branchRgbForSucursalName(sucursales, branch)},1)`,
         strokeWidth: 2,
         withDots: true,
       })),
     };
-  }, [ventasAnualesForLine, ventasAnualesBranches, ventasAnualesYears]);
+  }, [ventasAnualesForLine, ventasAnualesBranches, ventasAnualesYears, sucursales]);
 
   /* =========================
      DERIVED HOOKS & HELPERS (must be after all dependencies)
@@ -669,12 +648,12 @@ export default function VentasScreen() {
       {
         data: ventasSucursalRows.map((row) => row.total / 1_000_000),
         colors: ventasSucursalRows.map(
-          (row, idx) => (o: number) =>
-            `rgba(${getBranchColor(row.sucursal, idx)},${o})`,
+          (row) => (o: number) =>
+            `rgba(${branchRgbForSucursalName(sucursales, row.sucursal)},${o})`,
         ),
       },
     ],
-  }), [ventasSucursalRows]);
+  }), [ventasSucursalRows, sucursales]);
 
   /* =========================
      RENDER
@@ -1363,6 +1342,7 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
 
 function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   const { width, height } = useWindowDimensions();
+  const { sucursales } = useDashboardFilters();
 
   const [ano, setAno] = useState(() => new Date().getFullYear());
   const [mes, setMes] = useState(() => new Date().getMonth() + 1);
@@ -1490,7 +1470,7 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
             if (!grouped[id]) {
               grouped[id] = {
                 nombre,
-                color: colorMap[id] || getBranchColor(nombre, Math.abs(id)),
+                color: colorMap[id] || branchRgbForSucursalName(sucursales, nombre),
                 data: Array(daysInMonth).fill(0),
                 ejeDerecho: id === -3,
               };
@@ -1516,7 +1496,7 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
     };
 
     void fetchData();
-  }, [ano, mes, daysInMonth]);
+  }, [ano, mes, daysInMonth, sucursales]);
 
   const toggleSerie = (id: number) => {
     setEnabledSeries((prev) => {

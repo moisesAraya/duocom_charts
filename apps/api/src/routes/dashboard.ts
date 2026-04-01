@@ -150,6 +150,26 @@ const rowMatchesBranches = (row: NormalizedRow, filters: string[]): boolean => {
 };
 
 /**
+ * True si el row parece traer desglose por sucursal/bodega (no solo totales por grupo).
+ * Si el SP solo devuelve grupo + monto, no hay columnas de sucursal: filtrar por fila
+ * descartaría todo; en ese caso el handler omite rowMatchesBranches.
+ */
+const rowHasBranchOrientedColumns = (row: NormalizedRow): boolean =>
+  Object.keys(row).some((key) => {
+    const kl = key.toLowerCase();
+    if (kl.includes('grupo') && !kl.includes('sucursal')) return false;
+    return (
+      kl === 'sucursal' ||
+      kl === 'suc' ||
+      kl.includes('sucursal') ||
+      kl.includes('id_suc') ||
+      kl.includes('cod_suc') ||
+      kl.includes('bodega') ||
+      kl.includes('id_local')
+    );
+  });
+
+/**
  * Filtro de sucursal: ids en `sucursal` + nombres en `sucursalNom` (separados por |).
  * Así las filas del SP que solo traen nombre calzan aunque el cliente envíe solo id numérico.
  */
@@ -545,9 +565,12 @@ router.get('/dashboard/ventas-por-grupo', async (req, res, next) => {
       throw error;
     }
 
+    const useRowBranchFilter =
+      branches.length > 0 && rows.some((r) => rowHasBranchOrientedColumns(r));
+
     const totals = new Map<string, number>();
     for (const row of rows) {
-      if (!rowMatchesBranches(row, branches)) continue;
+      if (useRowBranchFilter && !rowMatchesBranches(row, branches)) continue;
       const group =
         toString(
           row.grupo ||

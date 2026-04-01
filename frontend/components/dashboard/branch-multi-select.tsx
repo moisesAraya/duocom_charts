@@ -7,29 +7,8 @@ import {
   Text,
   View,
 } from 'react-native';
+import { branchRgbByListIndex } from './branch-colors';
 import { canonicalBranchId, useDashboardFilters } from './filters-context';
-
-const SERIES_COLORS = [
-  '59, 130, 246',
-  '16, 185, 129',
-  '245, 158, 11',
-  '139, 92, 246',
-  '236, 72, 153',
-  '14, 116, 144',
-  '234, 88, 12',
-  '248, 113, 113',
-  '34, 197, 94',
-  '251, 146, 60',
-];
-
-const branchColorRgb = (branch: string, index: number): string => {
-  if (!branch) return SERIES_COLORS[index % SERIES_COLORS.length];
-  let hash = 0;
-  for (let i = 0; i < branch.length; i += 1) {
-    hash = (hash * 31 + branch.charCodeAt(i)) % 997;
-  }
-  return SERIES_COLORS[hash % SERIES_COLORS.length];
-};
 
 const isSelected = (selectedIds: string[], branchId: string): boolean => {
   const c = canonicalBranchId(branchId);
@@ -158,7 +137,7 @@ export function BranchMultiSelect({
               keyboardShouldPersistTaps="handled"
               renderItem={({ item, index }) => {
                 const on = isSelected(selectedIds, item.id);
-                const rgb = branchColorRgb(item.nombre || item.id, index);
+                const rgb = branchRgbByListIndex(index);
                 return (
                   <Pressable
                     style={[styles.row, on && styles.rowOn]}
