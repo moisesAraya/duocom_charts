@@ -1793,10 +1793,39 @@ router.get('/dashboard/proy-venta-anual', async (req, res, next) => {
     const dbConfig = getDbConfig(req);
     const pCantAños = parseNumber(String(req.query.pCantAños ?? '5'), 5);
     const rows = await getProyVentaAnualRows(dbConfig, pCantAños);
-    const filteredRows = rows.filter(r => r && r.sucursal && r.ano !== undefined && r.mes !== undefined && r.total !== undefined);
+    /** Canonicaliza filas del SP (_ProyVentaAnual / fallback): claves suelen ser anio, mes, t_bruto, etc. */
+    const data = rows
+      .filter((r) => r)
+      .map((r) => {
+        const sucursal =
+          toString(r.sucursal) ||
+          toString(r.descripcion_sucursal) ||
+          toString(r.nombre_sucursal) ||
+          '';
+        const ano = toNumber(r.ano || r.anio || r.ejercicio || r.year || r.periodo);
+        const mes = toNumber(r.mes || r.mes_num || r.mes_n || r.month || r.mes_venta);
+        const total =
+          toNumber(r.total) ||
+          toNumber(r.total_venta) ||
+          toNumber(r.monto) ||
+          toNumber(r.importe) ||
+          toNumber(r.t_bruto) ||
+          toNumber(r.venta) ||
+          0;
+        return { sucursal, ano, mes, total };
+      })
+      .filter(
+        (r) =>
+          Boolean(r.sucursal) &&
+          Number.isFinite(r.ano) &&
+          r.ano >= 1970 &&
+          Number.isFinite(r.mes) &&
+          r.mes >= 1 &&
+          r.mes <= 12,
+      );
     res.json({
       success: true,
-      data: filteredRows,
+      data,
     });
   } catch (error) {
     console.error('[dashboard] error in proy-venta-anual:', error);

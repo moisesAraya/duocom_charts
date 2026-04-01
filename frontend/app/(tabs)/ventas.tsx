@@ -1,6 +1,7 @@
 import * as ScreenOrientation from "expo-screen-orientation";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  InteractionManager,
   Modal,
   Pressable,
   ScrollView,
@@ -72,9 +73,6 @@ const toNumber = (value: unknown): number => {
   }
   return 0;
 };
-
-const truncateLabel = (value: string, max: number) =>
-  value.length > max ? `${value.slice(0, max)}...` : value;
 
 const calcStepFromMax = (max: number) => {
   if (!Number.isFinite(max) || max <= 0) return 1;
@@ -457,11 +455,12 @@ export default function VentasScreen() {
         loadVentasGrupo(),
         loadVentasMedioPago(),
         loadVentasAnuales(),
+        loadVentasTiempoReal(new Date()),
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadVentasAnuales, loadVentasGrupo, loadVentasMedioPago]);
+  }, [loadVentasAnuales, loadVentasGrupo, loadVentasMedioPago, loadVentasTiempoReal]);
 
   const ventasTiempoRealLabels = useMemo(() => {
     if (!ventasTiempoReal.length) return [];
@@ -630,7 +629,7 @@ export default function VentasScreen() {
   const ventasGrupoData = useMemo(() => {
     if (!ventasGrupo.length) return { labels: [], datasets: [] };
     return {
-      labels: ventasGrupo.map((g) => truncateLabel(g.grupo, 12)),
+      labels: ventasGrupo.map((g) => (g.grupo || "(Sin nombre)").trim() || "(Sin nombre)"),
       datasets: [
         {
           data: ventasGrupo.map((g) => g.monto),
@@ -638,6 +637,12 @@ export default function VentasScreen() {
       ],
     };
   }, [ventasGrupo]);
+
+  /** Ancho extra para leyenda del pie (scroll horizontal). */
+  const ventasGrupoChartMinWidth = useMemo(
+    () => Math.max(chartWidth, Math.round(chartWidth * 0.85 + ventasGrupo.length * 52)),
+    [chartWidth, ventasGrupo.length],
+  );
 
   const ventasSucursalChart = useMemo(() => ({
     labels: sparsifyLabels(
@@ -1016,7 +1021,9 @@ export default function VentasScreen() {
         kind="pie"
         colorRgb="245,158,11"
         width={chartWidth}
-        height={280}
+        height={300}
+        scrollable={ventasGrupo.length > 0}
+        minWidth={ventasGrupo.length ? ventasGrupoChartMinWidth : undefined}
         formatDetailValue={formatCurrency}
         isLoading={loadingVentasGrupo}
         isEmpty={!ventasGrupo.length}
@@ -1050,6 +1057,7 @@ const mesesNombresTabla = [
 ];
 
 function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
+  const { sucursalesReady } = useDashboardFilters();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [cantAños, setCantAños] = useState(pCantAños);
@@ -1059,38 +1067,84 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
   );
 
   useEffect(() => {
-    setLoading(true);
-    api
-      .get("/api/dashboard/proy-venta-anual", {
-        params: { pCantAños: cantAños },
-      })
-      .then((res) => {
-        setRows(res.data?.data ?? []);
-      })
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
-  }, [cantAños]);
+    if (!sucursalesReady) return;
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      setLoading(true);
+      api
+        .get("/api/dashboard/proy-venta-anual", {
+          params: { pCantAños: cantAños },
+        })
+        .then((res) => {
+          if (!cancelled) setRows(res.data?.data ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setRows([]);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    });
+    return () => {
+      cancelled = true;
+      task.cancel?.();
+    };
+  }, [cantAños, sucursalesReady]);
 
-  const rowsFiltered = rows
-    .filter((r) => r)
-    .map((r) => ({
-      sucursal: r.sucursal || r.Sucursal || r.SUCURSAL,
-      ano: r.ano || r.Ano || r.ANO,
-      mes: r.mes || r.Mes || r.MES,
-      total: r.total || r.Total || r.TOTAL,
-    }))
-    .filter(
-      (r) =>
-        r.sucursal &&
-        r.ano !== undefined &&
-        r.mes !== undefined &&
-        r.total !== undefined,
-    );
+  const rowsFiltered = useMemo(() => {
+    return rows
+      .filter((r) => r)
+      .map((r) => ({
+        sucursal: String(
+          r.sucursal ||
+            r.Sucursal ||
+            r.SUCURSAL ||
+            r.descripcion_sucursal ||
+            r.descripcionSucursal ||
+            "",
+        ).trim(),
+        ano: Number(r.ano ?? r.anio ?? r.Ano ?? r.ANIO ?? r.ejercicio),
+        mes: Number(r.mes ?? r.Mes ?? r.MES ?? r.mes_num),
+        total: toNumber(
+          r.total ?? r.Total ?? r.TOTAL ?? r.monto ?? r.Monto ?? r.importe,
+        ),
+      }))
+      .filter(
+        (r) =>
+          r.sucursal &&
+          Number.isFinite(r.ano) &&
+          r.ano >= 1970 &&
+          Number.isFinite(r.mes) &&
+          r.mes >= 1 &&
+          r.mes <= 12,
+      );
+  }, [rows]);
 
-  const sucursales = Array.from(new Set(rowsFiltered.map((r) => r.sucursal)));
-  const meses = Array.from(new Set(rowsFiltered.map((r) => r.mes))).sort(
-    (a, b) => a - b,
+  const sucursalesTabla = useMemo(
+    () => Array.from(new Set(rowsFiltered.map((r) => r.sucursal))),
+    [rowsFiltered],
   );
+  const meses = useMemo(
+    () => Array.from(new Set(rowsFiltered.map((r) => r.mes))).sort((a, b) => a - b),
+    [rowsFiltered],
+  );
+
+  const anios = useMemo(() => {
+    const fromData = Array.from(
+      new Set(
+        rowsFiltered
+          .map((r) => Number(r.ano))
+          .filter((y) => Number.isFinite(y) && y >= 1970),
+      ),
+    ).sort((a, b) => a - b);
+    if (fromData.length > 0) return fromData;
+    const cy = new Date().getFullYear();
+    return Array.from(
+      { length: cantAños },
+      (_, i) => cy - cantAños + 1 + i,
+    );
+  }, [rowsFiltered, cantAños]);
 
   const toggleExpanded = (suc: string) => {
     setExpandedSucursales((prev) => {
@@ -1100,12 +1154,6 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
       return next;
     });
   };
-
-  const currentYear = new Date().getFullYear();
-  const anios = Array.from(
-    { length: cantAños },
-    (_, i) => currentYear - cantAños + 1 + i,
-  );
 
   return (
     <View style={{ marginTop: 32, marginBottom: 32 }}>
@@ -1124,6 +1172,11 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
       </View>
       {loading ? (
         <Text>Cargando...</Text>
+      ) : sucursalesTabla.length === 0 ? (
+        <Text style={{ color: "#6B7280", fontSize: 14 }}>
+          Sin datos de ventas mensuales en este rango (revisa fechas globales o el procedimiento
+          _ProyVentaAnual en la base).
+        </Text>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View
@@ -1192,14 +1245,16 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
               </Text>
             </View>
 
-            {sucursales.map((suc) => {
+            {sucursalesTabla.map((suc) => {
               const isExpanded = expandedSucursales.has(suc);
               const sucRows = meses.map((mes) => {
                 const fila = rowsFiltered.filter(
-                  (r) => r.sucursal === suc && r.mes === mes,
+                  (r) => r.sucursal === suc && Number(r.mes) === Number(mes),
                 );
                 const totalesPorAnio = anios.map((anio) => {
-                  const filasAnio = fila.filter((f) => f.ano === anio);
+                  const filasAnio = fila.filter(
+                    (f) => Number(f.ano) === Number(anio),
+                  );
                   return filasAnio.reduce((sum, f) => sum + (f.total || 0), 0);
                 });
                 const totalMes = totalesPorAnio.reduce((a, b) => a + b, 0);
@@ -1342,7 +1397,7 @@ function TablaProyVentaAnual({ pCantAños }: { pCantAños: number }) {
 
 function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   const { width, height } = useWindowDimensions();
-  const { sucursales } = useDashboardFilters();
+  const { sucursales, sucursalesReady } = useDashboardFilters();
 
   const [ano, setAno] = useState(() => new Date().getFullYear());
   const [mes, setMes] = useState(() => new Date().getMonth() + 1);
@@ -1387,116 +1442,127 @@ function AnalisisVentasMensual({ chartWidth }: { chartWidth: number }) {
   }, []);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const response = await api.get("/api/dashboard/graf-vta-mes-suc", {
-          params: { ano, mes },
-        });
-
-        if (response.data?.success) {
-          const rows = response.data.data || [];
-          if (!Array.isArray(rows)) {
-            setSeriesMap({});
-            setEnabledSeries(new Set());
-            return;
-          }
-
-          const grouped: Record<
-            number,
-            {
-              nombre: string;
-              color: string;
-              data: number[];
-              ejeDerecho?: boolean;
-            }
-          > = {};
-
-          const colorMap: Record<number, string> = {
-            [-3]: "245,158,11",
-            [-2]: "59,130,246",
-            [-1]: "16,185,129",
-          };
-
-          rows.forEach((row: any) => {
-            const id = Number(
-              row["IdSucursal"] ||
-                row["IDSUCURSAL"] ||
-                row["idSucursal"] ||
-                row["Id# Sucursal"] ||
-                row["ID# SUCURSAL"] ||
-                row["id# sucursal"] ||
-                row["IdSucusal"] ||
-                0,
-            );
-
-            const nombre = String(
-              row["Sucursal"] ||
-                row["SUCURSAL"] ||
-                row["sucursal"] ||
-                row["NombreSucursal"] ||
-                row["NOMBRESUCURSAL"] ||
-                row["nombreSucursal"] ||
-                `Sucursal ${id}`,
-            ).trim();
-
-            const dia = Number(
-              row["Día"] ||
-                row["Dia"] ||
-                row["DIA"] ||
-                row["dia"] ||
-                row["dia_mes"] ||
-                row["dia_del_mes"] ||
-                row["DIA_MES"] ||
-                row["DIA_DEL_MES"] ||
-                row["day"] ||
-                0,
-            );
-
-            const total = Number(
-              row["Total"] ||
-                row["TOTAL"] ||
-                row["total"] ||
-                row["total_dia"] ||
-                row["TOTAL_DIA"] ||
-                row["total_venta"] ||
-                row["TOTAL_VENTA"] ||
-                row["Monto"] ||
-                row["MONTO"] ||
-                row["monto"] ||
-                0,
-            );
-
-            if (!grouped[id]) {
-              grouped[id] = {
-                nombre,
-                color: colorMap[id] || branchRgbForSucursalName(sucursales, nombre),
-                data: Array(daysInMonth).fill(0),
-                ejeDerecho: id === -3,
-              };
-            }
-
-            if (dia >= 1 && dia <= daysInMonth) {
-              grouped[id].data[dia - 1] = Number.isFinite(total) ? total : 0;
-            }
+    if (!sucursalesReady) return;
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) return;
+      void (async () => {
+        setLoading(true);
+        try {
+          const response = await api.get("/api/dashboard/graf-vta-mes-suc", {
+            params: { ano, mes },
           });
 
-          setSeriesMap(grouped);
-          setEnabledSeries(new Set(Object.keys(grouped).map(Number)));
-        } else {
-          setSeriesMap({});
-          setEnabledSeries(new Set());
-        }
-      } catch {
-        setSeriesMap({});
-        setEnabledSeries(new Set());
-      } finally {
-        setLoading(false);
-      }
-    };
+          if (cancelled) return;
 
-    void fetchData();
-  }, [ano, mes, daysInMonth, sucursales]);
+          if (response.data?.success) {
+            const rows = response.data.data || [];
+            if (!Array.isArray(rows)) {
+              setSeriesMap({});
+              setEnabledSeries(new Set());
+              return;
+            }
+
+            const grouped: Record<
+              number,
+              {
+                nombre: string;
+                color: string;
+                data: number[];
+                ejeDerecho?: boolean;
+              }
+            > = {};
+
+            const colorMap: Record<number, string> = {
+              [-3]: "245,158,11",
+              [-2]: "59,130,246",
+              [-1]: "16,185,129",
+            };
+
+            rows.forEach((row: any) => {
+              const id = Number(
+                row["IdSucursal"] ||
+                  row["IDSUCURSAL"] ||
+                  row["idSucursal"] ||
+                  row["Id# Sucursal"] ||
+                  row["ID# SUCURSAL"] ||
+                  row["id# sucursal"] ||
+                  row["IdSucusal"] ||
+                  0,
+              );
+
+              const nombre = String(
+                row["Sucursal"] ||
+                  row["SUCURSAL"] ||
+                  row["sucursal"] ||
+                  row["NombreSucursal"] ||
+                  row["NOMBRESUCURSAL"] ||
+                  row["nombreSucursal"] ||
+                  `Sucursal ${id}`,
+              ).trim();
+
+              const dia = Number(
+                row["Día"] ||
+                  row["Dia"] ||
+                  row["DIA"] ||
+                  row["dia"] ||
+                  row["dia_mes"] ||
+                  row["dia_del_mes"] ||
+                  row["DIA_MES"] ||
+                  row["DIA_DEL_MES"] ||
+                  row["day"] ||
+                  0,
+              );
+
+              const total = Number(
+                row["Total"] ||
+                  row["TOTAL"] ||
+                  row["total"] ||
+                  row["total_dia"] ||
+                  row["TOTAL_DIA"] ||
+                  row["total_venta"] ||
+                  row["TOTAL_VENTA"] ||
+                  row["Monto"] ||
+                  row["MONTO"] ||
+                  row["monto"] ||
+                  0,
+              );
+
+              if (!grouped[id]) {
+                grouped[id] = {
+                  nombre,
+                  color: colorMap[id] || branchRgbForSucursalName(sucursales, nombre),
+                  data: Array(daysInMonth).fill(0),
+                  ejeDerecho: id === -3,
+                };
+              }
+
+              if (dia >= 1 && dia <= daysInMonth) {
+                grouped[id].data[dia - 1] = Number.isFinite(total) ? total : 0;
+              }
+            });
+
+            setSeriesMap(grouped);
+            setEnabledSeries(new Set(Object.keys(grouped).map(Number)));
+          } else {
+            setSeriesMap({});
+            setEnabledSeries(new Set());
+          }
+        } catch {
+          if (!cancelled) {
+            setSeriesMap({});
+            setEnabledSeries(new Set());
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    });
+    return () => {
+      cancelled = true;
+      task.cancel?.();
+    };
+  }, [ano, mes, daysInMonth, sucursales, sucursalesReady]);
 
   const toggleSerie = (id: number) => {
     setEnabledSeries((prev) => {
